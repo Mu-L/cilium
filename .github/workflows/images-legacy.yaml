@@ -101,7 +101,7 @@ jobs:
             quay.io/${{ github.repository_owner }}/${{ matrix.name }}-ci:latest-race
             quay.io/${{ github.repository_owner }}/${{ matrix.name }}-ci:${{ steps.tag.outputs.tag }}-race
           build-args: |
-            BASE_IMAGE=quay.io/cilium/cilium-runtime:2021-01-20@sha256:247eff116cc5d0b3a4931eabd67ea2e8679f7c12877729a73929d3f30753065b
+            BASE_IMAGE=quay.io/cilium/cilium-runtime:0751d8d554b7245d4399dc892c631a4cbed21265@sha256:7701a89ba55e179e0404877f04f7935aa3e3ff70ac02fb881e2522982cfcde54
             LOCKDEBUG=1
             RACE=1
 
@@ -147,7 +147,7 @@ jobs:
           tags: |
             quay.io/${{ github.repository_owner }}/${{ matrix.name }}-ci:${{ steps.tag.outputs.tag }}-race
           build-args: |
-            BASE_IMAGE=quay.io/cilium/cilium-runtime:2021-01-20@sha256:247eff116cc5d0b3a4931eabd67ea2e8679f7c12877729a73929d3f30753065b
+            BASE_IMAGE=quay.io/cilium/cilium-runtime:0751d8d554b7245d4399dc892c631a4cbed21265@sha256:7701a89ba55e179e0404877f04f7935aa3e3ff70ac02fb881e2522982cfcde54
             LOCKDEBUG=1
             RACE=1
 
