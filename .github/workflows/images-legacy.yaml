@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - master
+      - pr/add-multi-arch-support
 
 jobs:
   build-and-push-prs:
