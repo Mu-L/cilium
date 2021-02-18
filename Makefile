@@ -281,7 +281,7 @@ install-bash-completion:
 GIT_VERSION: force
 	@if [ "$(GIT_VERSION)" != "`cat 2>/dev/null GIT_VERSION`" ] ; then echo "$(GIT_VERSION)" >GIT_VERSION; fi
 
-include Makefile.docker
+-include Makefile.docker
 
 CRD_OPTIONS ?= "crd:crdVersions=v1"
 # Generate manifests e.g. CRD, RBAC etc.
