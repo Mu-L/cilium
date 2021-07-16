@@ -12,7 +12,7 @@ debug: all
 
 include Makefile.defs
 
-SUBDIRS_CILIUM_CONTAINER := proxylib envoy bpf cilium daemon cilium-health bugtool
+SUBDIRS_CILIUM_CONTAINER := proxylib envoy bpf cilium daemon cilium-health bugtool tools/mount
 SUBDIRS := $(SUBDIRS_CILIUM_CONTAINER) operator plugins tools hubble-relay
 
 SUBDIRS_CILIUM_CONTAINER += plugins/cilium-cni
@@ -29,8 +29,6 @@ TESTPKGS_EVAL := $(subst github.com/cilium/cilium/,,$(shell echo $(GOFILES) | \
 TESTPKGS_EVAL += "test/helpers/logutils"
 TESTPKGS ?= $(TESTPKGS_EVAL)
 GOLANG_SRCFILES := $(shell for pkg in $(subst github.com/cilium/cilium/,,$(GOFILES)); do find $$pkg -name *.go -print; done | grep -v vendor | sort | uniq)
-K8S_CRD_EVAL := $(addprefix $(ROOT_DIR)/,$(shell git ls-files $(ROOT_DIR)/examples/crds | grep -v .gitignore | tr "\n" ' '))
-K8S_CRD_FILES ?= $(K8S_CRD_EVAL)
 
 SWAGGER_VERSION := v0.25.0
 SWAGGER := $(CONTAINER_ENGINE) run -u $(shell id -u):$(shell id -g) --rm -v $(CURDIR):$(CURDIR) -w $(CURDIR) --entrypoint swagger quay.io/goswagger/swagger:$(SWAGGER_VERSION)
@@ -306,14 +304,14 @@ manifests: ## Generate K8s manifests e.g. CRD, RBAC etc.
 	$(eval TMPDIR := $(shell mktemp -d))
 	cd "./vendor/sigs.k8s.io/controller-tools/cmd/controller-gen" && \
 	go run ./... $(CRD_OPTIONS) paths="$(PWD)/pkg/k8s/apis/cilium.io/v2;$(PWD)/pkg/k8s/apis/cilium.io/v2alpha1" output:crd:artifacts:config="$(TMPDIR)";
-	mv ${TMPDIR}/cilium.io_ciliumnetworkpolicies.yaml ./examples/crds/ciliumnetworkpolicies.yaml
-	mv ${TMPDIR}/cilium.io_ciliumclusterwidenetworkpolicies.yaml ./examples/crds/ciliumclusterwidenetworkpolicies.yaml
-	mv ${TMPDIR}/cilium.io_ciliumendpoints.yaml ./examples/crds/ciliumendpoints.yaml
-	mv ${TMPDIR}/cilium.io_ciliumidentities.yaml ./examples/crds/ciliumidentities.yaml
-	mv ${TMPDIR}/cilium.io_ciliumnodes.yaml ./examples/crds/ciliumnodes.yaml
-	mv ${TMPDIR}/cilium.io_ciliumexternalworkloads.yaml ./examples/crds/ciliumexternalworkloads.yaml
-	mv ${TMPDIR}/cilium.io_ciliumlocalredirectpolicies.yaml ./examples/crds/ciliumlocalredirectpolicies.yaml
-	mv ${TMPDIR}/cilium.io_ciliumegressnatpolicies.yaml ./examples/crds/ciliumegressnatpolicies.yaml
+	mv ${TMPDIR}/cilium.io_ciliumnetworkpolicies.yaml ./pkg/k8s/apis/cilium.io/client/crds/v2/ciliumnetworkpolicies.yaml
+	mv ${TMPDIR}/cilium.io_ciliumclusterwidenetworkpolicies.yaml ./pkg/k8s/apis/cilium.io/client/crds/v2/ciliumclusterwidenetworkpolicies.yaml
+	mv ${TMPDIR}/cilium.io_ciliumendpoints.yaml ./pkg/k8s/apis/cilium.io/client/crds/v2/ciliumendpoints.yaml
+	mv ${TMPDIR}/cilium.io_ciliumidentities.yaml ./pkg/k8s/apis/cilium.io/client/crds/v2/ciliumidentities.yaml
+	mv ${TMPDIR}/cilium.io_ciliumnodes.yaml ./pkg/k8s/apis/cilium.io/client/crds/v2/ciliumnodes.yaml
+	mv ${TMPDIR}/cilium.io_ciliumexternalworkloads.yaml ./pkg/k8s/apis/cilium.io/client/crds/v2/ciliumexternalworkloads.yaml
+	mv ${TMPDIR}/cilium.io_ciliumlocalredirectpolicies.yaml ./pkg/k8s/apis/cilium.io/client/crds/v2/ciliumlocalredirectpolicies.yaml
+	mv ${TMPDIR}/cilium.io_ciliumegressnatpolicies.yaml ./pkg/k8s/apis/cilium.io/client/crds/v2alpha1/ciliumegressnatpolicies.yaml
 	rm -rf $(TMPDIR)
 
 generate-api: api/v1/openapi.yaml ## Generate cilium-agent client, model and server code from openapi spec.
@@ -397,7 +395,9 @@ generate-k8s-api: ## Generate Cilium k8s API client, deepcopy and deepequal Go s
 	aws:types\
 	azure:types\
 	ipam:types\
+	alibabacloud:types\
 	k8s:types\
+	k8s:utils\
 	maps:ctmap\
 	maps:encrypt\
 	maps:eppolicymap\
@@ -420,27 +420,15 @@ generate-k8s-api: ## Generate Cilium k8s API client, deepcopy and deepequal Go s
 	$(call generate_k8s_api_deepcopy_deepequal,github.com/cilium/cilium/pkg/policy,"api:kafka")
 	$(call generate_k8s_api_all,github.com/cilium/cilium/pkg/k8s/apis,"cilium.io:v2 cilium.io:v2alpha1")
 	$(call generate_k8s_api_deepcopy_deepequal,github.com/cilium/cilium/pkg/aws,"eni:types")
+	$(call generate_k8s_api_deepcopy_deepequal,github.com/cilium/cilium/pkg/alibabacloud,"eni:types")
 	$(call generate_k8s_api_deepcopy_deepequal,github.com/cilium/cilium/api,"v1:models")
 	$(call generate_k8s_api_deepcopy_deepequal,github.com/cilium/cilium,"$\
 	pkg:bpf\
 	pkg:k8s\
 	pkg:labels\
 	pkg:loadbalancer\
-	pkg:tuple")
-
-# Explanation for the arguments to `go-bindata`:
-# - prefix:   Strip off the ROOT_DIR from the CRD YAML paths
-# - pkg:      CRD YAMLs live in the client package
-# - mode:     Hardcode the file permissions
-# - modetime: Hardcode the modification time so that the generated files don't
-#             change on every invocation
-GO_BINDATA := $(QUIET) go run ./... -prefix $(ROOT_DIR) -pkg client -mode 0640 -modtime 1450269211
-
-go-bindata: $(K8S_CRD_FILES)
-	@$(ECHO_GEN) $@
-	cd "./vendor/github.com/go-bindata/go-bindata/v3/go-bindata" && \
-		$(GO_BINDATA) -o $(ROOT_DIR)/pkg/k8s/apis/cilium.io/v2/client/bindata.go \
-		$(K8S_CRD_FILES)
+	pkg:tuple\
+	pkg:recorder")
 
 ##@ Development
 vps: ## List all the running vagrant VMs.
@@ -509,6 +497,9 @@ microk8s: check-microk8s ## Build cilium-dev docker image and import to mircrok8
 	$(QUIET)$(CONTAINER_ENGINE) tag $(IMAGE_REPOSITORY)/cilium-dev:$(LOCAL_IMAGE_TAG) $(LOCAL_IMAGE)
 	$(QUIET)./contrib/scripts/microk8s-import.sh $(LOCAL_IMAGE)
 
+kind: ## Create a kind cluster for Cilium development.
+	$(QUIET)./contrib/scripts/kind.sh
+
 precheck: logging-subsys-field ## Peform build precheck for the source code.
 ifeq ($(SKIP_K8S_CODE_GEN_CHECK),"false")
 	@$(ECHO_CHECK) contrib/scripts/check-k8s-code-gen.sh
@@ -574,9 +565,6 @@ install-manpages: ## Install manpages the Cilium CLI.
 
 postcheck: build ## Run Cilium build postcheck (update-cmdref, build documentation etc.).
 	$(QUIET)$(MAKE) $(SUBMAKEOPTS) -C Documentation update-cmdref check
-
-minikube: ## Setup a minikube with Cilium installed.
-	$(QUIET) contrib/scripts/minikube.sh
 
 licenses-all: ## Generate file with all the License from dependencies.
 	@$(GO) run ./tools/licensegen > LICENSE.all || ( rm -f LICENSE.all ; false )

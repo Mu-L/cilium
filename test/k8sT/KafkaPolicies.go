@@ -15,7 +15,6 @@
 package k8sTest
 
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -25,12 +24,12 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("K8sKafkaPolicyTest", func() {
+// The 5.4 CI job is intended to catch BPF complexity regressions and as such
+// doesn't need to execute this test suite.
+var _ = SkipDescribeIf(helpers.RunsOn54Kernel, "K8sKafkaPolicyTest", func() {
 
 	var (
-		kubectl          *helpers.Kubectl
-		backgroundCancel context.CancelFunc = func() {}
-		backgroundError  error
+		kubectl *helpers.Kubectl
 
 		// these two are set in BeforeAll
 		l7Policy       string
@@ -100,18 +99,12 @@ var _ = Describe("K8sKafkaPolicyTest", func() {
 				}
 				return true
 			}
-			err := helpers.WithTimeout(body, fmt.Sprintf("unable to resolve DNS for service %s in pod %s", service, pod), &helpers.TimeoutConfig{Timeout: 30 * time.Second})
+			err := helpers.WithTimeout(body, fmt.Sprintf("unable to resolve DNS for service %s in pod %s", service, pod), &helpers.TimeoutConfig{Timeout: 240 * time.Second})
 			return err
 		}
 
-		JustBeforeEach(func() {
-			backgroundCancel, backgroundError = kubectl.BackgroundReport("uptime")
-			Expect(backgroundError).To(BeNil(), "Cannot start background report process")
-		})
-
 		JustAfterEach(func() {
 			kubectl.ValidateNoErrorsInLogs(CurrentGinkgoTestDescription().Duration)
-			backgroundCancel()
 		})
 
 		AfterEach(func() {

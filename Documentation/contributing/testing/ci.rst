@@ -178,11 +178,11 @@ them all at once:
 +==================+==========================+
 | master           | test-me-please           |
 +------------------+--------------------------+
+| v1.10            | test-backport-1.10       |
++------------------+--------------------------+
 | v1.9             | test-backport-1.9        |
 +------------------+--------------------------+
 | v1.8             | test-backport-1.8        |
-+------------------+--------------------------+
-| v1.7             | test-backport-1.7        |
 +------------------+--------------------------+
 
 For ``master`` PRs: on top of ``test-me-please``, one may use 
@@ -325,7 +325,7 @@ Triage process
    setting the SINCE environment variable (it is a unix timestamp). The script
    checks the various test pipelines that need triage.
 
-   .. code-block:: bash
+   .. code-block:: shell-session
 
        $ contrib/scripts/jenkins-failures.sh
 
@@ -446,7 +446,7 @@ Logging into VM running tests
 1. If you have access to credentials for Jenkins, log into the Jenkins slave running the test workload
 2. Identify the vagrant box running the specific test
 
-.. code:: bash
+.. code-block:: shell-session
 
     $ vagrant global-status
     id       name                          provider   state   directory
@@ -459,7 +459,7 @@ Logging into VM running tests
 
 3. Log into the specific VM
 
-.. code:: bash
+.. code-block:: shell-session
 
     $ JOB_BASE_NAME=PR-1588 BUILD_NUMBER=6 vagrant ssh 6e68c6c
 

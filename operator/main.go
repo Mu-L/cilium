@@ -33,6 +33,7 @@ import (
 	"github.com/cilium/cilium/pkg/ipam/allocator"
 	ipamOption "github.com/cilium/cilium/pkg/ipam/option"
 	"github.com/cilium/cilium/pkg/k8s"
+	"github.com/cilium/cilium/pkg/k8s/apis/cilium.io/client"
 	clientset "github.com/cilium/cilium/pkg/k8s/client/clientset/versioned"
 	k8sversion "github.com/cilium/cilium/pkg/k8s/version"
 	"github.com/cilium/cilium/pkg/kvstore"
@@ -44,7 +45,6 @@ import (
 	"github.com/cilium/cilium/pkg/rand"
 	"github.com/cilium/cilium/pkg/rate"
 	"github.com/cilium/cilium/pkg/version"
-	wireguard "github.com/cilium/cilium/pkg/wireguard/operator"
 
 	gops "github.com/google/gops/agent"
 	"github.com/sirupsen/logrus"
@@ -91,8 +91,6 @@ var (
 		},
 	}
 
-	// Deprecated: remove in 1.9
-	apiServerPort  uint16
 	shutdownSignal = make(chan struct{})
 
 	ciliumK8sClient clientset.Interface
@@ -133,7 +131,9 @@ func initEnv() {
 	logging.DefaultLogger.Hooks.Add(metrics.NewLoggingHook(components.CiliumOperatortName))
 
 	// Logging should always be bootstrapped first. Do not add any code above this!
-	logging.SetupLogging(option.Config.LogDriver, logging.LogOptions(option.Config.LogOpt), binaryName, option.Config.Debug)
+	if err := logging.SetupLogging(option.Config.LogDriver, logging.LogOptions(option.Config.LogOpt), binaryName, option.Config.Debug); err != nil {
+		log.Fatal(err)
+	}
 
 	option.LogRegisteredOptions(log)
 	// Enable fallback to direct API probing to check for support of Leases in
@@ -203,7 +203,7 @@ func kvstoreEnabled() bool {
 
 func getAPIServerAddr() []string {
 	if operatorOption.Config.OperatorAPIServeAddr == "" {
-		return []string{fmt.Sprintf("127.0.0.1:%d", apiServerPort), fmt.Sprintf("[::1]:%d", apiServerPort)}
+		return []string{"127.0.0.1:0", "[::1]:0"}
 	}
 	return []string{operatorOption.Config.OperatorAPIServeAddr}
 }
@@ -272,8 +272,12 @@ func runOperator() {
 
 	// Register the CRDs after validating that we are running on a supported
 	// version of K8s.
-	if err := k8s.RegisterCRDs(); err != nil {
-		log.WithError(err).Fatal("Unable to register CRDs")
+	if !operatorOption.Config.SkipCRDCreation {
+		if err := client.RegisterCRDs(); err != nil {
+			log.WithError(err).Fatal("Unable to register CRDs")
+		}
+	} else {
+		log.Info("Skipping creation of CRDs")
 	}
 
 	// We only support Operator in HA mode for Kubernetes Versions having support for
@@ -362,24 +366,13 @@ func onOperatorStartLeading(ctx context.Context) {
 
 	var (
 		nodeManager *allocator.NodeEventHandler
-		wgOperator  *wireguard.Operator
 		err         error
 	)
-
-	if option.Config.EnableWireguard {
-		wgOperator, err = wireguard.NewOperator(
-			option.Config.WireguardSubnetV4,
-			option.Config.WireguardSubnetV6,
-			&ciliumNodeUpdateImplementation{})
-		if err != nil {
-			log.WithError(err).Fatal("Failed to create wireguard operator")
-		}
-	}
 
 	log.WithField(logfields.Mode, option.Config.IPAM).Info("Initializing IPAM")
 
 	switch ipamMode := option.Config.IPAM; ipamMode {
-	case ipamOption.IPAMAzure, ipamOption.IPAMENI, ipamOption.IPAMClusterPool:
+	case ipamOption.IPAMAzure, ipamOption.IPAMENI, ipamOption.IPAMClusterPool, ipamOption.IPAMAlibabaCloud:
 		alloc, providerBuiltin := allocatorProviders[ipamMode]
 		if !providerBuiltin {
 			log.Fatalf("%s allocator is not supported by this version of %s", ipamMode, binaryName)
@@ -389,12 +382,12 @@ func onOperatorStartLeading(ctx context.Context) {
 			log.WithError(err).Fatalf("Unable to init %s allocator", ipamMode)
 		}
 
-		nm, err := alloc.Start(&ciliumNodeUpdateImplementation{})
+		nm, err := alloc.Start(ctx, &ciliumNodeUpdateImplementation{})
 		if err != nil {
 			log.WithError(err).Fatalf("Unable to start %s allocator", ipamMode)
 		}
 
-		startSynchronizingCiliumNodes(nm, wgOperator)
+		startSynchronizingCiliumNodes(nm)
 		nodeManager = &nm
 
 		switch ipamMode {
@@ -415,15 +408,13 @@ func onOperatorStartLeading(ctx context.Context) {
 			nm.Resync(context.Background(), time.Time{})
 		}
 	default:
-		startSynchronizingCiliumNodes(NOPNodeManager, wgOperator)
+		startSynchronizingCiliumNodes(NOPNodeManager)
 		nodeManager = &NOPNodeManager
 	}
 
-	if wgOperator != nil {
-		<-k8sCiliumNodesCacheSynced
-		if err := wgOperator.RestoreFinished(); err != nil {
-			log.WithError(err).Warn("Failed to allocate wireguard IP addrs")
-		}
+	if operatorOption.Config.BGPAnnounceLBIP {
+		log.Info("Starting LB IP allocator")
+		operatorWatchers.StartLBIPAllocator(option.Config)
 	}
 
 	if kvstoreEnabled() {

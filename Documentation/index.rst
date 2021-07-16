@@ -56,7 +56,6 @@ The documentation is divided into the following sections:
    configuration/index
    policy/index
    operations/metrics
-   operations/scalability/index
    operations/performance/index
    operations/troubleshooting
 
@@ -88,4 +87,4 @@ The documentation is divided into the following sections:
    kvstore
    further_reading
    glossary
-
+   helm-reference

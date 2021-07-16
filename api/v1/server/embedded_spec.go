@@ -158,6 +158,9 @@ func init() {
           },
           "404": {
             "description": "Endpoints with provided parameters not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           }
         }
       }
@@ -190,6 +193,9 @@ func init() {
           },
           "404": {
             "description": "Endpoint not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           }
         }
       },
@@ -221,6 +227,9 @@ func init() {
           "409": {
             "description": "Endpoint already exists",
             "x-go-name": "Exists"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           },
           "500": {
             "description": "Endpoint creation failed",
@@ -262,6 +271,9 @@ func init() {
           },
           "404": {
             "description": "Endpoint not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           }
         }
       },
@@ -294,6 +306,9 @@ func init() {
           "404": {
             "description": "Endpoint does not exist"
           },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
+          },
           "500": {
             "description": "Endpoint update failed",
             "schema": {
@@ -325,6 +340,9 @@ func init() {
           },
           "404": {
             "description": "Endpoint not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           }
         }
       },
@@ -357,6 +375,9 @@ func init() {
           },
           "404": {
             "description": "Endpoint not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           },
           "500": {
             "description": "Update failed. Details in message.",
@@ -392,6 +413,9 @@ func init() {
           },
           "404": {
             "description": "Endpoint not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           }
         }
       }
@@ -416,6 +440,9 @@ func init() {
           },
           "404": {
             "description": "Endpoint not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           }
         }
       },
@@ -444,6 +471,9 @@ func init() {
           },
           "404": {
             "description": "Endpoint not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           },
           "500": {
             "description": "Error while updating labels",
@@ -479,6 +509,9 @@ func init() {
           },
           "404": {
             "description": "Endpoint not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           }
         }
       }
@@ -1194,6 +1227,123 @@ func init() {
         }
       }
     },
+    "/recorder": {
+      "get": {
+        "tags": [
+          "recorder"
+        ],
+        "summary": "Retrieve list of all recorders",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Recorder"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/recorder/masks": {
+      "get": {
+        "tags": [
+          "recorder"
+        ],
+        "summary": "Retrieve list of all recorder masks",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/RecorderMask"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/recorder/{id}": {
+      "get": {
+        "tags": [
+          "recorder"
+        ],
+        "summary": "Retrieve configuration of a recorder",
+        "parameters": [
+          {
+            "$ref": "#/parameters/recorder-id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Recorder"
+            }
+          },
+          "404": {
+            "description": "Recorder not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "recorder"
+        ],
+        "summary": "Create or update recorder",
+        "parameters": [
+          {
+            "$ref": "#/parameters/recorder-id"
+          },
+          {
+            "$ref": "#/parameters/recorder-config"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "500": {
+            "description": "Error while creating recorder",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            },
+            "x-go-name": "Failure"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "recorder"
+        ],
+        "summary": "Delete a recorder",
+        "parameters": [
+          {
+            "$ref": "#/parameters/recorder-id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "404": {
+            "description": "Recorder not found"
+          },
+          "500": {
+            "description": "Recorder deletion failed",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            },
+            "x-go-name": "Failure"
+          }
+        }
+      }
+    },
     "/service": {
       "get": {
         "tags": [
@@ -1844,6 +1994,15 @@ func init() {
         "cilium-version": {
           "type": "string"
         },
+        "encryption": {
+          "type": "object",
+          "properties": {
+            "wireguard": {
+              "description": "Status of the Wireguard agent",
+              "$ref": "#/definitions/WireguardStatus"
+            }
+          }
+        },
         "endpoint-list": {
           "type": "array",
           "items": {
@@ -1873,6 +2032,27 @@ func init() {
           "additionalProperties": {
             "type": "string"
           }
+        }
+      }
+    },
+    "EncryptionStatus": {
+      "description": "Status of transparent encryption\n\n+k8s:deepcopy-gen=true",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "Disabled",
+            "IPsec",
+            "Wireguard"
+          ]
+        },
+        "msg": {
+          "description": "Human readable status/error/warning message",
+          "type": "string"
+        },
+        "wireguard": {
+          "description": "Status of the Wireguard agent",
+          "$ref": "#/definitions/WireguardStatus"
         }
       }
     },
@@ -2013,6 +2193,10 @@ func init() {
       "description": "Datapath configuration to be used for the endpoint",
       "type": "object",
       "properties": {
+        "disable-sip-verification": {
+          "description": "Disable source IP verification for the endpoint.\n",
+          "type": "boolean"
+        },
         "external-ipam": {
           "description": "Indicates that IPAM is done external to Cilium. This will prevent the IP from being released and re-allocation of the IP address is skipped on restore.\n",
           "type": "boolean"
@@ -3306,6 +3490,135 @@ func init() {
         }
       }
     },
+    "Recorder": {
+      "description": "Collection of wildcard filters for pcap recorder",
+      "type": "object",
+      "properties": {
+        "spec": {
+          "$ref": "#/definitions/RecorderSpec"
+        },
+        "status": {
+          "$ref": "#/definitions/RecorderStatus"
+        }
+      }
+    },
+    "RecorderFilter": {
+      "description": "n-tuple filter to match traffic to be recorded",
+      "type": "object",
+      "properties": {
+        "dst-port": {
+          "description": "Layer 4 destination port, zero (or in future range)",
+          "type": "string"
+        },
+        "dst-prefix": {
+          "description": "Layer 3 destination CIDR",
+          "type": "string"
+        },
+        "protocol": {
+          "description": "Layer 4 protocol",
+          "type": "string",
+          "enum": [
+            "TCP",
+            "UDP",
+            "ANY"
+          ]
+        },
+        "src-port": {
+          "description": "Layer 4 source port, zero (or in future range)",
+          "type": "string"
+        },
+        "src-prefix": {
+          "description": "Layer 3 source CIDR",
+          "type": "string"
+        }
+      }
+    },
+    "RecorderMask": {
+      "description": "Individual mask for pcap recorder",
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/definitions/RecorderMaskStatus"
+        }
+      }
+    },
+    "RecorderMaskSpec": {
+      "description": "Configuration of a recorder mask",
+      "type": "object",
+      "properties": {
+        "dst-port-mask": {
+          "description": "Layer 4 destination port mask",
+          "type": "string"
+        },
+        "dst-prefix-mask": {
+          "description": "Layer 3 destination IP mask",
+          "type": "string"
+        },
+        "priority": {
+          "description": "Priority of this mask",
+          "type": "integer"
+        },
+        "protocol-mask": {
+          "description": "Layer 4 protocol mask",
+          "type": "string"
+        },
+        "src-port-mask": {
+          "description": "Layer 4 source port mask",
+          "type": "string"
+        },
+        "src-prefix-mask": {
+          "description": "Layer 3 source IP mask",
+          "type": "string"
+        },
+        "users": {
+          "description": "Number of users of this mask",
+          "type": "integer"
+        }
+      }
+    },
+    "RecorderMaskStatus": {
+      "description": "Configuration of a recorder mask",
+      "type": "object",
+      "properties": {
+        "realized": {
+          "$ref": "#/definitions/RecorderMaskSpec"
+        }
+      }
+    },
+    "RecorderSpec": {
+      "description": "Configuration of a recorder",
+      "type": "object",
+      "required": [
+        "id",
+        "filters"
+      ],
+      "properties": {
+        "capture-length": {
+          "description": "Maximum packet length or zero for full packet length",
+          "type": "integer"
+        },
+        "filters": {
+          "description": "List of wildcard filters for given recorder",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RecorderFilter"
+          }
+        },
+        "id": {
+          "description": "Unique identification",
+          "type": "integer"
+        }
+      }
+    },
+    "RecorderStatus": {
+      "description": "Configuration of a recorder",
+      "type": "object",
+      "properties": {
+        "realized": {
+          "$ref": "#/definitions/RecorderSpec"
+        }
+      }
+    },
     "RemoteCluster": {
       "description": "Status of remote cluster\n\n+k8s:deepcopy-gen=true",
       "properties": {
@@ -3542,6 +3855,10 @@ func init() {
           "description": "Status of all endpoint controllers",
           "$ref": "#/definitions/ControllerStatuses"
         },
+        "encryption": {
+          "description": "Status of transparent encryption",
+          "$ref": "#/definitions/EncryptionStatus"
+        },
         "host-routing": {
           "description": "Status of host routing",
           "$ref": "#/definitions/HostRouting"
@@ -3625,6 +3942,79 @@ func init() {
         },
         "labels": {
           "$ref": "#/definitions/Labels"
+        }
+      }
+    },
+    "WireguardInterface": {
+      "description": "Status of a Wireguard interface\n\n+k8s:deepcopy-gen=true",
+      "properties": {
+        "listen-port": {
+          "description": "Port on which the Wireguard endpoint is exposed",
+          "type": "integer"
+        },
+        "name": {
+          "description": "Name of the interface",
+          "type": "string"
+        },
+        "peer-count": {
+          "description": "Number of peers configured on this interface",
+          "type": "integer"
+        },
+        "peers": {
+          "description": "Optional list of wireguard peers",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WireguardPeer"
+          }
+        },
+        "public-key": {
+          "description": "Public key of this interface",
+          "type": "string"
+        }
+      }
+    },
+    "WireguardPeer": {
+      "description": "Status of a Wireguard peer\n\n+k8s:deepcopy-gen=true",
+      "properties": {
+        "allowed-ips": {
+          "description": "List of IPs which may be routed through this peer",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "endpoint": {
+          "description": "Endpoint on which we are connected to this peer",
+          "type": "string"
+        },
+        "last-handshake-time": {
+          "description": "Timestamp of the last handshake with this peer",
+          "type": "string",
+          "format": "date-time"
+        },
+        "public-key": {
+          "description": "Public key of this peer",
+          "type": "string"
+        },
+        "transfer-rx": {
+          "description": "Number of received bytes",
+          "type": "integer"
+        },
+        "transfer-tx": {
+          "description": "Number of sent bytes",
+          "type": "integer"
+        }
+      }
+    },
+    "WireguardStatus": {
+      "description": "Status of the Wireguard agent\n\n+k8s:deepcopy-gen=true",
+      "properties": {
+        "interfaces": {
+          "description": "Wireguard interfaces managed by this Cilium instance",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WireguardInterface"
+          }
         }
       }
     }
@@ -3736,6 +4126,22 @@ func init() {
       "schema": {
         "$ref": "#/definitions/PrefilterSpec"
       }
+    },
+    "recorder-config": {
+      "description": "Recorder configuration",
+      "name": "config",
+      "in": "body",
+      "required": true,
+      "schema": {
+        "$ref": "#/definitions/RecorderSpec"
+      }
+    },
+    "recorder-id": {
+      "type": "integer",
+      "description": "ID of recorder",
+      "name": "id",
+      "in": "path",
+      "required": true
     },
     "service-address": {
       "description": "Service address configuration",
@@ -3917,6 +4323,9 @@ func init() {
           },
           "404": {
             "description": "Endpoints with provided parameters not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           }
         }
       }
@@ -3953,6 +4362,9 @@ func init() {
           },
           "404": {
             "description": "Endpoint not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           }
         }
       },
@@ -3993,6 +4405,9 @@ func init() {
           "409": {
             "description": "Endpoint already exists",
             "x-go-name": "Exists"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           },
           "500": {
             "description": "Endpoint creation failed",
@@ -4038,6 +4453,9 @@ func init() {
           },
           "404": {
             "description": "Endpoint not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           }
         }
       },
@@ -4079,6 +4497,9 @@ func init() {
           "404": {
             "description": "Endpoint does not exist"
           },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
+          },
           "500": {
             "description": "Endpoint update failed",
             "schema": {
@@ -4114,6 +4535,9 @@ func init() {
           },
           "404": {
             "description": "Endpoint not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           }
         }
       },
@@ -4150,6 +4574,9 @@ func init() {
           },
           "404": {
             "description": "Endpoint not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           },
           "500": {
             "description": "Update failed. Details in message.",
@@ -4189,6 +4616,9 @@ func init() {
           },
           "404": {
             "description": "Endpoint not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           }
         }
       }
@@ -4217,6 +4647,9 @@ func init() {
           },
           "404": {
             "description": "Endpoint not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           }
         }
       },
@@ -4249,6 +4682,9 @@ func init() {
           },
           "404": {
             "description": "Endpoint not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           },
           "500": {
             "description": "Error while updating labels",
@@ -4288,6 +4724,9 @@ func init() {
           },
           "404": {
             "description": "Endpoint not found"
+          },
+          "429": {
+            "description": "Rate-limiting too many requests in the given time frame"
           }
         }
       }
@@ -5081,6 +5520,141 @@ func init() {
         }
       }
     },
+    "/recorder": {
+      "get": {
+        "tags": [
+          "recorder"
+        ],
+        "summary": "Retrieve list of all recorders",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/Recorder"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/recorder/masks": {
+      "get": {
+        "tags": [
+          "recorder"
+        ],
+        "summary": "Retrieve list of all recorder masks",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/RecorderMask"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/recorder/{id}": {
+      "get": {
+        "tags": [
+          "recorder"
+        ],
+        "summary": "Retrieve configuration of a recorder",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "ID of recorder",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "schema": {
+              "$ref": "#/definitions/Recorder"
+            }
+          },
+          "404": {
+            "description": "Recorder not found"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "recorder"
+        ],
+        "summary": "Create or update recorder",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "ID of recorder",
+            "name": "id",
+            "in": "path",
+            "required": true
+          },
+          {
+            "description": "Recorder configuration",
+            "name": "config",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RecorderSpec"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "201": {
+            "description": "Created"
+          },
+          "500": {
+            "description": "Error while creating recorder",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            },
+            "x-go-name": "Failure"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "recorder"
+        ],
+        "summary": "Delete a recorder",
+        "parameters": [
+          {
+            "type": "integer",
+            "description": "ID of recorder",
+            "name": "id",
+            "in": "path",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "404": {
+            "description": "Recorder not found"
+          },
+          "500": {
+            "description": "Recorder deletion failed",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            },
+            "x-go-name": "Failure"
+          }
+        }
+      }
+    },
     "/service": {
       "get": {
         "tags": [
@@ -5815,6 +6389,15 @@ func init() {
         "cilium-version": {
           "type": "string"
         },
+        "encryption": {
+          "type": "object",
+          "properties": {
+            "wireguard": {
+              "description": "Status of the Wireguard agent",
+              "$ref": "#/definitions/WireguardStatus"
+            }
+          }
+        },
         "endpoint-list": {
           "type": "array",
           "items": {
@@ -5844,6 +6427,36 @@ func init() {
           "additionalProperties": {
             "type": "string"
           }
+        }
+      }
+    },
+    "DebugInfoEncryption": {
+      "type": "object",
+      "properties": {
+        "wireguard": {
+          "description": "Status of the Wireguard agent",
+          "$ref": "#/definitions/WireguardStatus"
+        }
+      }
+    },
+    "EncryptionStatus": {
+      "description": "Status of transparent encryption\n\n+k8s:deepcopy-gen=true",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "Disabled",
+            "IPsec",
+            "Wireguard"
+          ]
+        },
+        "msg": {
+          "description": "Human readable status/error/warning message",
+          "type": "string"
+        },
+        "wireguard": {
+          "description": "Status of the Wireguard agent",
+          "$ref": "#/definitions/WireguardStatus"
         }
       }
     },
@@ -5984,6 +6597,10 @@ func init() {
       "description": "Datapath configuration to be used for the endpoint",
       "type": "object",
       "properties": {
+        "disable-sip-verification": {
+          "description": "Disable source IP verification for the endpoint.\n",
+          "type": "boolean"
+        },
         "external-ipam": {
           "description": "Indicates that IPAM is done external to Cilium. This will prevent the IP from being released and re-allocation of the IP address is skipped on restore.\n",
           "type": "boolean"
@@ -7505,6 +8122,135 @@ func init() {
         }
       }
     },
+    "Recorder": {
+      "description": "Collection of wildcard filters for pcap recorder",
+      "type": "object",
+      "properties": {
+        "spec": {
+          "$ref": "#/definitions/RecorderSpec"
+        },
+        "status": {
+          "$ref": "#/definitions/RecorderStatus"
+        }
+      }
+    },
+    "RecorderFilter": {
+      "description": "n-tuple filter to match traffic to be recorded",
+      "type": "object",
+      "properties": {
+        "dst-port": {
+          "description": "Layer 4 destination port, zero (or in future range)",
+          "type": "string"
+        },
+        "dst-prefix": {
+          "description": "Layer 3 destination CIDR",
+          "type": "string"
+        },
+        "protocol": {
+          "description": "Layer 4 protocol",
+          "type": "string",
+          "enum": [
+            "TCP",
+            "UDP",
+            "ANY"
+          ]
+        },
+        "src-port": {
+          "description": "Layer 4 source port, zero (or in future range)",
+          "type": "string"
+        },
+        "src-prefix": {
+          "description": "Layer 3 source CIDR",
+          "type": "string"
+        }
+      }
+    },
+    "RecorderMask": {
+      "description": "Individual mask for pcap recorder",
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/definitions/RecorderMaskStatus"
+        }
+      }
+    },
+    "RecorderMaskSpec": {
+      "description": "Configuration of a recorder mask",
+      "type": "object",
+      "properties": {
+        "dst-port-mask": {
+          "description": "Layer 4 destination port mask",
+          "type": "string"
+        },
+        "dst-prefix-mask": {
+          "description": "Layer 3 destination IP mask",
+          "type": "string"
+        },
+        "priority": {
+          "description": "Priority of this mask",
+          "type": "integer"
+        },
+        "protocol-mask": {
+          "description": "Layer 4 protocol mask",
+          "type": "string"
+        },
+        "src-port-mask": {
+          "description": "Layer 4 source port mask",
+          "type": "string"
+        },
+        "src-prefix-mask": {
+          "description": "Layer 3 source IP mask",
+          "type": "string"
+        },
+        "users": {
+          "description": "Number of users of this mask",
+          "type": "integer"
+        }
+      }
+    },
+    "RecorderMaskStatus": {
+      "description": "Configuration of a recorder mask",
+      "type": "object",
+      "properties": {
+        "realized": {
+          "$ref": "#/definitions/RecorderMaskSpec"
+        }
+      }
+    },
+    "RecorderSpec": {
+      "description": "Configuration of a recorder",
+      "type": "object",
+      "required": [
+        "id",
+        "filters"
+      ],
+      "properties": {
+        "capture-length": {
+          "description": "Maximum packet length or zero for full packet length",
+          "type": "integer"
+        },
+        "filters": {
+          "description": "List of wildcard filters for given recorder",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/RecorderFilter"
+          }
+        },
+        "id": {
+          "description": "Unique identification",
+          "type": "integer"
+        }
+      }
+    },
+    "RecorderStatus": {
+      "description": "Configuration of a recorder",
+      "type": "object",
+      "properties": {
+        "realized": {
+          "$ref": "#/definitions/RecorderSpec"
+        }
+      }
+    },
     "RemoteCluster": {
       "description": "Status of remote cluster\n\n+k8s:deepcopy-gen=true",
       "properties": {
@@ -7780,6 +8526,10 @@ func init() {
           "description": "Status of all endpoint controllers",
           "$ref": "#/definitions/ControllerStatuses"
         },
+        "encryption": {
+          "description": "Status of transparent encryption",
+          "$ref": "#/definitions/EncryptionStatus"
+        },
         "host-routing": {
           "description": "Status of host routing",
           "$ref": "#/definitions/HostRouting"
@@ -7863,6 +8613,79 @@ func init() {
         },
         "labels": {
           "$ref": "#/definitions/Labels"
+        }
+      }
+    },
+    "WireguardInterface": {
+      "description": "Status of a Wireguard interface\n\n+k8s:deepcopy-gen=true",
+      "properties": {
+        "listen-port": {
+          "description": "Port on which the Wireguard endpoint is exposed",
+          "type": "integer"
+        },
+        "name": {
+          "description": "Name of the interface",
+          "type": "string"
+        },
+        "peer-count": {
+          "description": "Number of peers configured on this interface",
+          "type": "integer"
+        },
+        "peers": {
+          "description": "Optional list of wireguard peers",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WireguardPeer"
+          }
+        },
+        "public-key": {
+          "description": "Public key of this interface",
+          "type": "string"
+        }
+      }
+    },
+    "WireguardPeer": {
+      "description": "Status of a Wireguard peer\n\n+k8s:deepcopy-gen=true",
+      "properties": {
+        "allowed-ips": {
+          "description": "List of IPs which may be routed through this peer",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "endpoint": {
+          "description": "Endpoint on which we are connected to this peer",
+          "type": "string"
+        },
+        "last-handshake-time": {
+          "description": "Timestamp of the last handshake with this peer",
+          "type": "string",
+          "format": "date-time"
+        },
+        "public-key": {
+          "description": "Public key of this peer",
+          "type": "string"
+        },
+        "transfer-rx": {
+          "description": "Number of received bytes",
+          "type": "integer"
+        },
+        "transfer-tx": {
+          "description": "Number of sent bytes",
+          "type": "integer"
+        }
+      }
+    },
+    "WireguardStatus": {
+      "description": "Status of the Wireguard agent\n\n+k8s:deepcopy-gen=true",
+      "properties": {
+        "interfaces": {
+          "description": "Wireguard interfaces managed by this Cilium instance",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WireguardInterface"
+          }
         }
       }
     }
@@ -7974,6 +8797,22 @@ func init() {
       "schema": {
         "$ref": "#/definitions/PrefilterSpec"
       }
+    },
+    "recorder-config": {
+      "description": "Recorder configuration",
+      "name": "config",
+      "in": "body",
+      "required": true,
+      "schema": {
+        "$ref": "#/definitions/RecorderSpec"
+      }
+    },
+    "recorder-id": {
+      "type": "integer",
+      "description": "ID of recorder",
+      "name": "id",
+      "in": "path",
+      "required": true
     },
     "service-address": {
       "description": "Service address configuration",

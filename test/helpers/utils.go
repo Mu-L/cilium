@@ -1,4 +1,4 @@
-// Copyright 2017-2020 Authors of Cilium
+// Copyright 2017-2021 Authors of Cilium
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -109,7 +109,7 @@ func (c *TimeoutConfig) Validate() error {
 		return fmt.Errorf("Timeout too short (must be at least 5 seconds): %v", c.Timeout)
 	}
 	if c.Ticker == 0 {
-		c.Ticker = 5 * time.Second
+		c.Ticker = 1 * time.Second
 	} else if c.Ticker < time.Second {
 		return fmt.Errorf("Timeout config Ticker interval too short (must be at least 1 second): %v", c.Ticker)
 	}
@@ -399,7 +399,7 @@ func DNSDeployment(base string) string {
 	var DNSEngine = "coredns"
 	k8sVersion := GetCurrentK8SEnv()
 	switch k8sVersion {
-	case "1.7", "1.8", "1.9", "1.10":
+	case "1.8", "1.9", "1.10":
 		DNSEngine = "kubedns"
 	}
 
@@ -427,12 +427,6 @@ func getK8sSupportedConstraints(ciliumVersion string) (semver.Range, error) {
 		return nil, err
 	}
 	switch {
-	case IsCiliumV1_5(cst):
-		return versioncheck.MustCompile(">=1.8.0 <1.16.0"), nil
-	case IsCiliumV1_6(cst):
-		return versioncheck.MustCompile(">=1.8.0 <1.18.0"), nil
-	case IsCiliumV1_7(cst):
-		return versioncheck.MustCompile(">=1.10.0 <1.18.0"), nil
 	case IsCiliumV1_8(cst):
 		return versioncheck.MustCompile(">=1.10.0 <1.19.0"), nil
 	case IsCiliumV1_9(cst):
@@ -508,6 +502,16 @@ func DoesNotRunOnNetNextKernel() bool {
 	return !RunsOnNetNextKernel()
 }
 
+// RunsOn54Kernel checks whether a test case is running on the 5.4 kernel.
+func RunsOn54Kernel() bool {
+	return os.Getenv("KERNEL") == "54"
+}
+
+// DoesNotRunOn54Kernel is the complement function of RunsOn54Kernel.
+func DoesNotRunOn54Kernel() bool {
+	return !RunsOn54Kernel()
+}
+
 // RunsOn419Kernel checks whether a test case is running on the 4.19 kernel.
 func RunsOn419Kernel() bool {
 	return os.Getenv("KERNEL") == "419"
@@ -522,17 +526,16 @@ func DoesNotRunOn419Kernel() bool {
 	return !RunsOn419Kernel()
 }
 
-// RunsOnNetNextOr419Kernel checks whether a test case is running on the net-next
-// kernel (depending on the image, it's the latest kernel either from net-next.git
-// or bpf-next.git tree), or on the > 4.19.57 kernel.
-func RunsOnNetNextOr419Kernel() bool {
-	return RunsOnNetNextKernel() || RunsOn419Kernel()
+// RunsOn419OrLaterKernel checks whether a test case is running on the bpf-next,
+// 4.19.x (x > 57), or 5.4 kernels.
+func RunsOn419OrLaterKernel() bool {
+	return RunsOnNetNextKernel() || RunsOn419Kernel() || RunsOn54Kernel()
 }
 
-// DoesNotRunOnNetNextOr419Kernel is the complement function of
-// RunsOnNetNextOr419Kernel.
-func DoesNotRunOnNetNextOr419Kernel() bool {
-	return !RunsOnNetNextOr419Kernel()
+// DoesNotRunOn419OrLaterKernel is the complement function of
+// RunsOn419OrLaterKernel.
+func DoesNotRunOn419OrLaterKernel() bool {
+	return !RunsOn419OrLaterKernel()
 }
 
 // RunsOnGKE returns true if the tests are running on GKE.
@@ -553,6 +556,19 @@ func RunsOnEKS() bool {
 // DoesNotRunOnEKS is the complement function of DoesNotRunOnEKS.
 func DoesNotRunOnEKS() bool {
 	return !RunsOnEKS()
+}
+
+// RunsWithKubeProxyReplacement returns true if the kernel supports our
+// kube-proxy replacement. Note that kube-proxy may still be running
+// alongside Cilium.
+func RunsWithKubeProxyReplacement() bool {
+	return RunsOnGKE() || RunsOn419OrLaterKernel()
+}
+
+// DoesNotRunWithKubeProxyReplacement is the complement function of
+// RunsWithKubeProxyReplacement.
+func DoesNotRunWithKubeProxyReplacement() bool {
+	return !RunsWithKubeProxyReplacement()
 }
 
 // DoesNotHaveHosts returns a function which returns true if a CI job

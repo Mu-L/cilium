@@ -30,22 +30,20 @@ assignees: ''
         instructions.
   - [ ] Commit all changes with title `Prepare for release vX.Y.Z`
   - [ ] Submit PR (`contrib/release/submit-release.sh`)
+  - [ ] For a new minor version, add the 'stable' tag as part of the GitHub
+        workflow and remove the 'stable' tag from the last stable branch.
 - [ ] Merge PR
 - [ ] Create and push *both* tags to GitHub (`vX.Y.Z`, `X.Y.Z`)
   - Pull latest branch locally and run `contrib/release/tag-release.sh`
 - [ ] Ask a maintainer to approve the build in the following links (keep the URL
       of the GitHub run to be used later):
-  - [Cilium v1.10](https://github.com/cilium/cilium/actions?query=workflow:%22Image+Release+Build%22)
-  - [Cilium v1.9](https://github.com/cilium/cilium/actions?query=workflow:%22Image+Release+Build+v1.9%22)
-  - [Cilium v1.8](https://github.com/cilium/cilium/actions?query=workflow:%22Image+Release+Build+v1.8%22)
-  - [Cilium v1.7](https://github.com/cilium/cilium/actions?query=workflow:%22Image+Release+Build+v1.7%22)
+  - [Cilium Image Release builds](https://github.com/cilium/cilium/actions?query=workflow:%22Image+Release+Build%22)
   - Check if all docker images are available before announcing the release
     `make -C install/kubernetes/ check-docker-images`
 - [ ] Get the image digests from the build process and make a commit and PR with
       these digests.
-  - [ ] Run `contrib/release/pull-docker-manifests.sh` to fetch the image
-        digests, use the URL of the GitHub run here.
-  - [ ] Create a commit and push as a new PR.
+  - [ ] Run `contrib/release/post-release.sh` to fetch the image
+        digests and submit a PR to update these, use the URL of the GitHub run here.
   - [ ] Merge PR
 - [ ] Update helm charts
   - [ ] Pull latest branch locally into the cilium repository.
@@ -54,12 +52,19 @@ assignees: ''
         branch and push these changes into the helm repository. Make sure the
         generated helm charts point to the commit that contains the image
         digests.
-- [ ] Run sanity check of Helm install using connectivity-check script.
-      Suggested approach: Follow the full [GKE getting started guide].
+  - [ ] Check the output of the [chart workflow] and see if the test was
+        successful.
+- [ ] Check [read the docs] configuration:
+    - [ ] For a RC, set a new build as active and hidden in [active versions].
+    - [ ] For a new minor version set it as the [default version] and mark the
+          EOL version as active and hidden and configure the new minor version
+          as active and **not** hidden in [active versions].
+    - [ ] For new minor version and RC update algolia configuration search in
+          [docsearch-scraper-webhook].
 - [ ] Check draft release from [releases] page
   - [ ] Update the text at the top with 2-3 highlights of the release
   - [ ] Copy the text from `digest-vX.Y.Z.txt` (previously generated with
-        `contrib/release/pull-docker-manifests.sh`) to the end of the release.
+        `contrib/release/post-release.sh`) to the end of the release.
   - [ ] Publish the release
 - [ ] Announce the release in #general on Slack (only [@]channel for vX.Y.0)
 - [ ] Update Grafana dashboards (only for vX.Y.0)
@@ -68,11 +73,14 @@ assignees: ''
 
 ## Post-release
 
+- [ ] For new minor version update [security policy]
 - [ ] Prepare post-release changes to master branch using `contrib/release/bump-readme.sh`
-- [ ] Update the `stable` tags for each Cilium image (`contrib/release/bump-docker-stable.sh`)
 - [ ] Update external tools and guides to point to the new Cilium version:
   - [ ] [kops]
   - [ ] [kubespray]
+  - [ ] [network policy]
+  - [ ] [cluster administration networking]
+  - [ ] [cluster administration addons]
 
 
 [release blockers]: https://github.com/cilium/cilium/labels/release-blocker%2F1.X
@@ -85,5 +93,14 @@ assignees: ''
 [kops]: https://github.com/kubernetes/kops/
 [kubespray]: https://github.com/kubernetes-sigs/kubespray/
 [cilium helm release tool]: https://github.com/cilium/charts/blob/master/prepare_artifacts.sh
-[GKE getting started guide]: https://docs.cilium.io/en/stable/gettingstarted/k8s-install-gke/
+[Quick Install]: https://docs.cilium.io/en/stable/gettingstarted/k8s-install-default.html
 [cilium-runtime images]: https://quay.io/repository/cilium/cilium-runtime
+[read the docs]: https://readthedocs.org/projects/cilium/
+[active versions]: https://readthedocs.org/projects/cilium/versions/
+[default version]: https://readthedocs.org/dashboard/cilium/advanced/
+[docsearch-scraper-webhook]: https://github.com/cilium/docsearch-scraper-webhook
+[security policy]: https://github.com/cilium/cilium/security/policy
+[network policy]: https://kubernetes.io/docs/tasks/administer-cluster/network-policy-provider/cilium-network-policy/
+[cluster administration networking]: https://kubernetes.io/docs/concepts/cluster-administration/networking/
+[cluster administration addons]: https://kubernetes.io/docs/concepts/cluster-administration/addons/
+[chart workflow]: https://github.com/cilium/charts/actions/workflows/conformance-gke.yaml

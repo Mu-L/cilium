@@ -24,7 +24,9 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("K8sChaosTest", func() {
+// The 5.4 CI job is intended to catch BPF complexity regressions and as such
+// doesn't need to execute this test suite.
+var _ = SkipDescribeIf(helpers.RunsOn54Kernel, "K8sChaosTest", func() {
 
 	var (
 		kubectl        *helpers.Kubectl
@@ -231,7 +233,7 @@ var _ = Describe("K8sChaosTest", func() {
 			res := kubectl.ExecPodCmdBackground(
 				ctx,
 				helpers.DefaultNamespace,
-				netperfClient,
+				netperfClient, "",
 				fmt.Sprintf("netperf -l 60 -t TCP_STREAM -H %s", podsIps[netperfServer]))
 
 			restartCilium()
@@ -248,7 +250,7 @@ var _ = Describe("K8sChaosTest", func() {
 			res := kubectl.ExecPodCmdBackground(
 				ctx,
 				helpers.DefaultNamespace,
-				netperfClient,
+				netperfClient, "",
 				fmt.Sprintf("netperf -l 60 -t TCP_STREAM -H %s", podsIps[netperfServer]))
 
 			By("Installing the L3-L4 Policy")

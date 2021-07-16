@@ -1,4 +1,4 @@
-// Copyright 2016-2020 Authors of Cilium
+// Copyright 2016-2021 Authors of Cilium
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -496,6 +496,11 @@ func (c *clusterNodesClient) NodeNeighborRefresh(ctx context.Context, node nodeT
 	return
 }
 
+func (c *clusterNodesClient) NodeCleanNeighbors() {
+	// no-op
+	return
+}
+
 func (h *getNodes) cleanupClients() {
 	past := time.Now().Add(-clientGCTimeout)
 	for k, v := range h.clients {
@@ -617,9 +622,9 @@ func (d *Daemon) getStatus(brief bool) models.StatusResponse {
 
 	sr.Stale = stale
 
-	//CiliumVersion definition
+	// CiliumVersion definition
 	ver := version.GetCiliumVersion()
-	ciliumVer := fmt.Sprintf("%s (v.%s-r.%s)", ver.Version, ver.Version, ver.Revision)
+	ciliumVer := fmt.Sprintf("%s (v%s-%s)", ver.Version, ver.Version, ver.Revision)
 
 	switch {
 	case len(sr.Stale) > 0:
@@ -916,6 +921,42 @@ func (d *Daemon) startStatusCollector() {
 				if status.Err == nil {
 					if s, ok := status.Data.(*models.HubbleStatus); ok {
 						d.statusResponse.Hubble = s
+					}
+				}
+			},
+		},
+		{
+			Name: "encryption",
+			Probe: func(ctx context.Context) (interface{}, error) {
+				switch {
+				case option.Config.EnableIPSec:
+					return &models.EncryptionStatus{
+						Mode: models.EncryptionStatusModeIPsec,
+					}, nil
+				case option.Config.EnableWireguard:
+					var msg string
+					status, err := d.datapath.WireguardAgent().Status(false)
+					if err != nil {
+						msg = err.Error()
+					}
+					return &models.EncryptionStatus{
+						Mode:      models.EncryptionStatusModeWireguard,
+						Msg:       msg,
+						Wireguard: status,
+					}, nil
+				default:
+					return &models.EncryptionStatus{
+						Mode: models.EncryptionStatusModeDisabled,
+					}, nil
+				}
+			},
+			OnStatusUpdate: func(status status.Status) {
+				d.statusCollectMutex.Lock()
+				defer d.statusCollectMutex.Unlock()
+
+				if status.Err == nil {
+					if s, ok := status.Data.(*models.EncryptionStatus); ok {
+						d.statusResponse.Encryption = s
 					}
 				}
 			},

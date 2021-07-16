@@ -127,7 +127,7 @@ admission controller
 or can be directly specified in the Pod, Deployment, ReplicationController
 resource like this:
 
-.. code:: bash
+.. code-block:: yaml
 
         apiVersion: v1
         kind: Pod
@@ -180,6 +180,14 @@ policies to a particular cluster.
 .. only:: epub or latex
 
         .. literalinclude:: ../../examples/policies/kubernetes/clustermesh/cross-cluster-policy.yaml
+
+Note the ``io.kubernetes.pod.namespace: default`` in the policy
+rule. It makes sure the policy applies to ``rebel-base`` in the
+``default`` namespace of ``cluster2`` regardless of the namespace in
+``cluster1`` where ``x-wing`` is deployed in. If the namespace label
+of policy rules is omitted it defaults to the same namespace where the
+policy itself is applied in, which may be not what is wanted when
+deploying cross-cluster policies.
 
 Clusterwide Policies
 --------------------

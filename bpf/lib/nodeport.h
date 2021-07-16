@@ -442,8 +442,8 @@ static __always_inline int dsr_reply_icmp6(struct __ctx_buff *ctx,
 	const __s32 orig_dgram = 64, off = ETH_HLEN;
 	const __u32 l3_max = sizeof(*ip6) + orig_dgram;
 	__be16 type = bpf_htons(ETH_P_IPV6);
-	__s32 len_new = off + sizeof(*ip6) + orig_dgram;
-	__s32 len_old = ctx_full_len(ctx);
+	__u64 len_new = off + sizeof(*ip6) + orig_dgram;
+	__u64 len_old = ctx_full_len(ctx);
 	void *data_end = ctx_data_end(ctx);
 	void *data = ctx_data(ctx);
 	__wsum wsum;
@@ -629,7 +629,7 @@ int tail_nodeport_nat_ipv6(struct __ctx_buff *ctx)
 	bool l2_hdr_required = true;
 
 	target.addr = tmp;
-#ifdef ENCAP_IFINDEX
+#ifdef TUNNEL_MODE
 	if (dir == NAT_DIR_EGRESS) {
 		struct remote_endpoint_info *info;
 		union v6addr *dst;
@@ -686,7 +686,7 @@ int tail_nodeport_nat_ipv6(struct __ctx_buff *ctx)
 		ret = DROP_MISSED_TAIL_CALL;
 		goto drop_err;
 	}
-#ifdef ENCAP_IFINDEX
+#ifdef TUNNEL_MODE
 	if (fib_params.l.ifindex == ENCAP_IFINDEX)
 		goto out_send;
 #endif
@@ -744,6 +744,7 @@ int tail_nodeport_nat_ipv6(struct __ctx_buff *ctx)
 		}
 	}
 out_send:
+	cilium_capture_out(ctx);
 	return ctx_redirect(ctx, fib_params.l.ifindex, 0);
 drop_err:
 	return send_drop_notify_error(ctx, 0, ret, CTX_ACT_DROP,
@@ -888,9 +889,6 @@ redo_local:
 	}
 
 	if (!backend_local) {
-#ifdef ENABLE_WIREGUARD
-		set_encrypt_mark(ctx);
-#endif /* ENABLE_WIREGUARD */
 		edt_set_aggregate(ctx, 0);
 		if (nodeport_uses_dsr6(&tuple)) {
 #if DSR_ENCAP_MODE == DSR_ENCAP_IPIP
@@ -963,7 +961,7 @@ static __always_inline int rev_nodeport_lb6(struct __ctx_buff *ctx, int *ifindex
 		bpf_mark_snat_done(ctx);
 
 		*ifindex = ct_state.ifindex;
-#ifdef ENCAP_IFINDEX
+#ifdef TUNNEL_MODE
 		{
 			union v6addr *dst = (union v6addr *)&ip6->daddr;
 			struct remote_endpoint_info *info;
@@ -1057,7 +1055,10 @@ int tail_rev_nodeport_lb6(struct __ctx_buff *ctx)
 	ret = rev_nodeport_lb6(ctx, &ifindex);
 	if (IS_ERR(ret))
 		return send_drop_notify_error(ctx, 0, ret, CTX_ACT_DROP, METRIC_EGRESS);
+
 	edt_set_aggregate(ctx, 0);
+	cilium_capture_out(ctx);
+
 	return ctx_redirect(ctx, ifindex, 0);
 }
 
@@ -1068,7 +1069,7 @@ declare_tailcall_if(__or(__and(is_defined(ENABLE_IPV4),
 		    CILIUM_CALL_IPV6_ENCAP_NODEPORT_NAT)
 int tail_handle_nat_fwd_ipv6(struct __ctx_buff *ctx)
 {
-#if defined(ENCAP_IFINDEX) && defined(IS_BPF_OVERLAY)
+#if defined(TUNNEL_MODE) && defined(IS_BPF_OVERLAY)
 	union v6addr addr = { .p1 = 0 };
 	BPF_V6(addr, ROUTER_IP);
 #else
@@ -1121,7 +1122,7 @@ static __always_inline bool snat_v4_needed(struct __ctx_buff *ctx, __be32 *addr,
 	 * overlapping tuples, e.g. applications in hostns reusing
 	 * source IPs we SNAT in NodePort and BPF-masq.
 	 */
-#if defined(ENCAP_IFINDEX) && defined(IS_BPF_OVERLAY)
+#if defined(TUNNEL_MODE) && defined(IS_BPF_OVERLAY)
 	if (ip4->saddr == IPV4_GATEWAY) {
 		*addr = IPV4_GATEWAY;
 		return true;
@@ -1142,7 +1143,7 @@ static __always_inline bool snat_v4_needed(struct __ctx_buff *ctx, __be32 *addr,
 		return true;
 	}
 # endif
-#endif /* defined(ENCAP_IFINDEX) && defined(IS_BPF_OVERLAY) */
+#endif /* defined(TUNNEL_MODE) && defined(IS_BPF_OVERLAY) */
 
 
 #ifdef ENABLE_MASQUERADE /* SNAT local pod to world packets */
@@ -1155,7 +1156,7 @@ static __always_inline bool snat_v4_needed(struct __ctx_buff *ctx, __be32 *addr,
 # endif
 #ifdef IPV4_SNAT_EXCLUSION_DST_CIDR
 	/* Do not MASQ if a dst IP belongs to a pods CIDR
-	 * (native-routing-cidr if specified, otherwise local pod CIDR).
+	 * (ipv4-native-routing-cidr if specified, otherwise local pod CIDR).
 	 * The check is performed before we determine that a packet is
 	 * sent from a local pod, as this check is cheaper than
 	 * the map lookup done in the latter check.
@@ -1184,7 +1185,7 @@ static __always_inline bool snat_v4_needed(struct __ctx_buff *ctx, __be32 *addr,
 			if (map_lookup_elem(&IP_MASQ_AGENT_IPV4, &pfx))
 				return false;
 #endif
-#ifndef ENCAP_IFINDEX
+#ifndef TUNNEL_MODE
 			/* In the tunnel mode, a packet from a local ep
 			 * to a remote node is not encap'd, and is sent
 			 * via a native dev. Therefore, such packet has
@@ -1611,7 +1612,7 @@ int tail_nodeport_nat_ipv4(struct __ctx_buff *ctx)
 	bool l2_hdr_required = true;
 
 	target.addr = IPV4_DIRECT_ROUTING;
-#ifdef ENCAP_IFINDEX
+#ifdef TUNNEL_MODE
 	if (dir == NAT_DIR_EGRESS) {
 		struct remote_endpoint_info *info;
 
@@ -1670,7 +1671,7 @@ int tail_nodeport_nat_ipv4(struct __ctx_buff *ctx)
 		ret = DROP_MISSED_TAIL_CALL;
 		goto drop_err;
 	}
-#ifdef ENCAP_IFINDEX
+#ifdef TUNNEL_MODE
 	if (fib_params.l.ifindex == ENCAP_IFINDEX)
 		goto out_send;
 #endif
@@ -1726,6 +1727,7 @@ int tail_nodeport_nat_ipv4(struct __ctx_buff *ctx)
 		}
 	}
 out_send:
+	cilium_capture_out(ctx);
 	return ctx_redirect(ctx, fib_params.l.ifindex, 0);
 drop_err:
 	return send_drop_notify_error(ctx, 0, ret, CTX_ACT_DROP,
@@ -1885,12 +1887,6 @@ redo_local:
 	}
 
 	if (!backend_local) {
-#ifdef ENABLE_WIREGUARD
-		/* The request which is to be forwarded needs to go over the
-		 * Wireguard tunnel.
-		 */
-		set_encrypt_mark(ctx);
-#endif /* ENABLE_WIREGUARD */
 		edt_set_aggregate(ctx, 0);
 		if (nodeport_uses_dsr4(&tuple)) {
 #if DSR_ENCAP_MODE == DSR_ENCAP_IPIP
@@ -1961,7 +1957,7 @@ static __always_inline int rev_nodeport_lb4(struct __ctx_buff *ctx, int *ifindex
 		bpf_mark_snat_done(ctx);
 
 		*ifindex = ct_state.ifindex;
-#ifdef ENCAP_IFINDEX
+#ifdef TUNNEL_MODE
 		{
 			struct remote_endpoint_info *info;
 
@@ -2055,7 +2051,10 @@ int tail_rev_nodeport_lb4(struct __ctx_buff *ctx)
 	ret = rev_nodeport_lb4(ctx, &ifindex);
 	if (IS_ERR(ret))
 		return send_drop_notify_error(ctx, 0, ret, CTX_ACT_DROP, METRIC_EGRESS);
+
 	edt_set_aggregate(ctx, 0);
+	cilium_capture_out(ctx);
+
 	return ctx_redirect(ctx, ifindex, 0);
 }
 

@@ -66,6 +66,26 @@ func bpffsMountpoint() string {
 	return ""
 }
 
+func cgroup2fsMounts() []string {
+	var mounts []string
+	mnts, err := mountinfo.GetMountInfo()
+	if err != nil {
+		return mounts
+	}
+
+	// Cgroup2 fs can be mounted at multiple mount points. Ideally, we would
+	// like to read the mount point where Cilium attaches BPF cgroup programs
+	// (determined by cgroup-root config option). But since this is debug information,
+	// let's collect all the mount points.
+	for _, mnt := range mnts {
+		if mnt.FilesystemType == "cgroup2" {
+			mounts = append(mounts, mnt.MountPoint)
+		}
+	}
+
+	return mounts
+}
+
 func defaultCommands(confDir string, cmdDir string, k8sPods []string) []string {
 	var commands []string
 	// Not expecting all of the commands to be available
@@ -94,21 +114,15 @@ func defaultCommands(confDir string, cmdDir string, k8sPods []string) []string {
 		"taskset -pc 1",
 		// iptables
 		"iptables-save -c",
-		"iptables -S",
-		"ip6tables -S",
-		"iptables -L -v",
-		"ip rule",
-		"iptables-legacy -L -v",
-		"iptables-legacy -S",
-		"ip6tables-legacy -S",
-		"iptables-nft -L -v",
-		"iptables-nft -S",
-		"ip6tables-nft -S",
+		"ip6tables-save -c",
 		"iptables-nft-save -c",
+		"ip6tables-nft-save -c",
 		"iptables-legacy-save -c",
+		"ip6tables-legacy-save -c",
+		"ip rule",
 		// xfrm
 		"ip xfrm policy",
-		"ip -s xfrm state | awk '!/auth|enc|aead|auth-trunc|comp/'",
+		"ip -s xfrm state",
 		// gops
 		fmt.Sprintf("gops memstats $(pidof %s)", components.CiliumAgentName),
 		fmt.Sprintf("gops stack $(pidof %s)", components.CiliumAgentName),
@@ -121,6 +135,39 @@ func defaultCommands(confDir string, cmdDir string, k8sPods []string) []string {
 	if bpffsMountpoint := bpffsMountpoint(); bpffsMountpoint != "" {
 		commands = append(commands, []string{
 			// LB and CT map for debugging services; using bpftool for a reliable dump
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_call_policy", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_calls_overlay_2", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_capture_cache", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_lxc", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_metrics", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_tunnel_map", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_signals", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_ktime_cache", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_ipcache", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_events", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_sock_ops", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_signals", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_capture4_rules", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_capture6_rules", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_call_policy", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_nodeport_neigh4", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_nodeport_neigh6", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_lb4_source_range", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_lb6_source_range", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_lb4_maglev_inner", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_lb6_maglev_inner", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_lb4_maglev", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_lb6_maglev", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_lb6_health", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_lb6_reverse_sk", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_lb4_health", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_lb4_reverse_sk", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_ipmasq_v4", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_ipv4_frag_datagrams", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_ep_to_policy", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_throttle", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_encrypt_state", bpffsMountpoint),
+			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_egress_v4", bpffsMountpoint),
 			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_lb4_services_v2", bpffsMountpoint),
 			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_lb4_services", bpffsMountpoint),
 			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_lb4_backends", bpffsMountpoint),
@@ -138,6 +185,13 @@ func defaultCommands(confDir string, cmdDir string, k8sPods []string) []string {
 			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_ct_any6_global", bpffsMountpoint),
 			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_snat_v4_external", bpffsMountpoint),
 			fmt.Sprintf("bpftool map dump pinned %s/tc/globals/cilium_snat_v6_external", bpffsMountpoint),
+		}...)
+	}
+
+	cgroup2fsMounts := cgroup2fsMounts()
+	for i := range cgroup2fsMounts {
+		commands = append(commands, []string{
+			fmt.Sprintf("bpftool cgroup tree %s", cgroup2fsMounts[i]),
 		}...)
 	}
 
@@ -302,6 +356,7 @@ func copyCiliumInfoCommands(cmdDir string, k8sPods []string) []string {
 		"cilium ip list -n -o json",
 		"cilium map list --verbose",
 		"cilium service list",
+		"cilium recorder list",
 		"cilium status --verbose",
 		"cilium identity list",
 		"cilium-health status",

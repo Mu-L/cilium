@@ -34,7 +34,7 @@ const (
 	//
 	// Maintainers: Run ./Documentation/check-crd-compat-table.sh for each release
 	// Developers: Bump patch for each change in the CRD schema.
-	CustomResourceDefinitionSchemaVersion = "1.23.1"
+	CustomResourceDefinitionSchemaVersion = "1.23.3"
 
 	// CustomResourceDefinitionSchemaVersionKey is key to label which holds the CRD schema version
 	CustomResourceDefinitionSchemaVersionKey = "io.cilium.k8s.crd.schema.version"
@@ -136,20 +136,6 @@ const (
 
 	// CEWName is the full name of Cilium External Workload
 	CEWName = CEWPluralName + "." + CustomResourceDefinitionGroup
-
-	// Cilium Egress NAT Policy (CENP)
-
-	// CENPSingularName is the singular name of Cilium Egress NAT Policy
-	CENPSingularName = "ciliumegressnatpolicy"
-
-	// CENPPluralName is the plural name of Cilium Egress NAT Policy
-	CENPPluralName = "ciliumegressnatpolicies"
-
-	// CENPKindDefinition is the kind name of Cilium Egress NAT Policy
-	CENPKindDefinition = "CiliumEgressNATPolicy"
-
-	// CENPName is the full name of Cilium Egress NAT Policy
-	CENPName = CENPPluralName + "." + CustomResourceDefinitionGroup
 )
 
 // SchemeGroupVersion is group version used to register these objects

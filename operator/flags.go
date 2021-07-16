@@ -28,7 +28,7 @@ import (
 )
 
 func init() {
-	cobra.OnInitialize(option.InitConfig("Cilium-Operator", "cilium-operators"))
+	cobra.OnInitialize(option.InitConfig(rootCmd, "Cilium-Operator", "cilium-operators"))
 
 	flags := rootCmd.Flags()
 
@@ -98,17 +98,12 @@ func init() {
 	option.BindEnv(option.LogDriver)
 
 	flags.Var(option.NewNamedMapOptions(option.LogOpt, &option.Config.LogOpt, nil),
-		option.LogOpt, "Log driver options for cilium-operator")
+		option.LogOpt, `Log driver options for cilium-operator, `+
+			`configmap example for syslog driver: {"syslog.level":"info","syslog.facility":"local4"}`)
 	option.BindEnv(option.LogOpt)
 
 	flags.Bool(option.EnableWireguard, false, "Enable wireguard")
 	option.BindEnv(option.EnableWireguard)
-
-	flags.String(option.WireguardSubnetV4, defaults.WireguardSubnetV4, "Wireguard tunnel IPv4 subnet")
-	option.BindEnv(option.WireguardSubnetV4)
-
-	flags.String(option.WireguardSubnetV6, defaults.WireguardSubnetV6, "Wireguard tunnel IPv6 subnet")
-	option.BindEnv(option.WireguardSubnetV6)
 
 	var defaultIPAM string
 	switch binaryName {
@@ -118,6 +113,8 @@ func init() {
 		defaultIPAM = ipamOption.IPAMENI
 	case "cilium-operator-azure":
 		defaultIPAM = ipamOption.IPAMAzure
+	case "cilium-operator-alibabacloud":
+		defaultIPAM = ipamOption.IPAMAlibabaCloud
 	case "cilium-operator-generic":
 		defaultIPAM = ipamOption.IPAMClusterPool
 	}
@@ -138,6 +135,8 @@ func init() {
 				return "cilium-operator-aws"
 			case ipamOption.IPAMAzure:
 				return "cilium-operator-azure"
+			case ipamOption.IPAMAlibabaCloud:
+				return "cilium-operator-alibabacloud"
 			case ipamOption.IPAMKubernetes, ipamOption.IPAMClusterPool, ipamOption.IPAMCRD:
 				return "cilium-operator-generic"
 			default:
@@ -166,9 +165,13 @@ func init() {
 			if ipamFlagValue != ipamOption.IPAMAzure {
 				return unsupporterErr()
 			}
+		case "cilium-operator-alibabacloud":
+			if ipamFlagValue != ipamOption.IPAMAlibabaCloud {
+				return unsupporterErr()
+			}
 		case "cilium-operator-generic":
 			switch ipamFlagValue {
-			case ipamOption.IPAMENI, ipamOption.IPAMAzure:
+			case ipamOption.IPAMENI, ipamOption.IPAMAzure, ipamOption.IPAMAlibabaCloud:
 				return unsupporterErr()
 			}
 		}
@@ -299,6 +302,15 @@ func init() {
 
 	flags.String(option.K8sServiceProxyName, "", "Value of K8s service-proxy-name label for which Cilium handles the services (empty = all services without service.kubernetes.io/service-proxy-name label)")
 	option.BindEnv(option.K8sServiceProxyName)
+
+	flags.Bool(option.BGPAnnounceLBIP, false, "Announces service IPs of type LoadBalancer via BGP")
+	option.BindEnv(option.BGPAnnounceLBIP)
+
+	flags.String(option.BGPConfigPath, "/var/lib/cilium/bgp/config.yaml", "Path to file containing the BGP configuration")
+	option.BindEnv(option.BGPConfigPath)
+
+	flags.Bool(option.SkipCRDCreation, false, "When true, Kubernetes Custom Resource Definitions will not be created")
+	option.BindEnv(option.SkipCRDCreation)
 
 	viper.BindPFlags(flags)
 }

@@ -265,7 +265,7 @@ func bpfCompileProg(src string, dst string) error {
 	srcpath := filepath.Join("sockops", src)
 	outpath := filepath.Join(dst)
 
-	err := loader.Compile(ctx, srcpath, outpath)
+	err := loader.CompileWithOptions(ctx, srcpath, outpath, option.Config.CompilerFlags)
 	if err != nil {
 		return fmt.Errorf("failed compile %s: %s", srcpath, err)
 	}
@@ -306,13 +306,11 @@ func bpfLoadMapProg(object string, load string) error {
 func SkmsgEnable() error {
 	err := bpfCompileProg(cIPC, oIPC)
 	if err != nil {
-		log.Error(err)
 		return err
 	}
 
 	err = bpfLoadMapProg(oIPC, eIPC)
 	if err != nil {
-		log.Error(err)
 		return err
 	}
 	log.Info("Sockmsg Enabled, bpf_redir loaded")
@@ -360,12 +358,10 @@ func bpfLoadAttachProg(object string, load string, mapName string) (int, int, er
 func SockmapEnable() error {
 	err := bpfCompileProg(cSockops, oSockops)
 	if err != nil {
-		log.Error(err)
 		return err
 	}
 	progID, mapID, err := bpfLoadAttachProg(oSockops, eSockops, sockMap)
 	if err != nil {
-		log.Error(err)
 		return err
 	}
 	log.Infof("Sockmap Enabled: bpf_sockops prog_id %d and map_id %d loaded", progID, mapID)

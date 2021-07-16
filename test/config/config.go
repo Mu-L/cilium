@@ -49,6 +49,7 @@ type CiliumTestConfigType struct {
 	ProvisionK8s         bool
 	Timeout              time.Duration
 	Kubeconfig           string
+	KubectlPath          string
 	RegistryCredentials  string
 	Benchmarks           bool
 	// Multinode enables the running of tests that involve more than one
@@ -87,7 +88,7 @@ func (c *CiliumTestConfigType) ParseFlags() {
 		"Specifies which image of cilium-operator to use during tests")
 	flagset.StringVar(&c.CiliumOperatorTag, "cilium.operator-tag", "",
 		"Specifies which tag of cilium-operator to use during tests")
-	flagset.StringVar(&c.CiliumOperatorSuffix, "cilium.operator-suffix", "",
+	flagset.StringVar(&c.CiliumOperatorSuffix, "cilium.operator-suffix", "-ci",
 		"Specifies a suffix to append to operator image after cloud-specific suffix")
 	flagset.StringVar(&c.HubbleRelayImage, "cilium.hubble-relay-image", "",
 		"Specifies which image of hubble-relay to use during tests")
@@ -99,6 +100,8 @@ func (c *CiliumTestConfigType) ParseFlags() {
 		"Specifies timeout for test run")
 	flagset.StringVar(&c.Kubeconfig, "cilium.kubeconfig", "",
 		"Kubeconfig to be used for k8s tests")
+	flagset.StringVar(&c.KubectlPath, "cilium.kubectl-path", "/tmp/kubectl",
+		"Path that holds version-specific kubectl binaries")
 	flagset.StringVar(&c.RegistryCredentials, "cilium.registryCredentials", "",
 		"Registry credentials to be used to download images")
 	flagset.BoolVar(&c.Benchmarks, "cilium.benchmarks", false,

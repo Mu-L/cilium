@@ -28,19 +28,19 @@ If you intent to release a new feature release, see the
 #. Checkout the desired stable branch (can be master branch if stable branch was
    not created) and pull it:
 
-   ::
+   .. code-block:: shell-session
 
        git checkout v1.0; git pull
 
 #. Create a branch for the release pull request:
 
-   ::
+   .. code-block:: shell-session
 
        git checkout -b pr/prepare-v1.0.3
 
 #. Update the ``AUTHORS file``
 
-   ::
+   .. code-block:: shell-session
 
        make update-authors
 
@@ -84,9 +84,6 @@ If you intent to release a new feature release, see the
 
 #. Run ``make -C install/kubernetes all USE_DIGESTS=false``
 
-#. Add all files from the ``install/kubernetes`` using ``git add``, do not
-   forget to include the ``quick-install`` yaml files.
-
 #. If there is not branch for this RC, prepare the changelog now
    (as it was previously skipped).
    If this is the first RC, ``X.Y.Z`` should be the last, stable version,
@@ -101,13 +98,13 @@ If you intent to release a new feature release, see the
 
 #. Checkout out the stable branch and pull your merged changes:
 
-   ::
+   .. code-block:: shell-session
 
        git checkout v1.0; git pull
 
 #. Create release tags:
 
-   ::
+   .. code-block:: shell-session
 
        git tag -a v1.0.3 -m 'Release v1.0.3'
        git tag -a 1.0.3 -m 'Release 1.0.3'
@@ -122,7 +119,7 @@ If you intent to release a new feature release, see the
 
 #. Push the git release tag
 
-   ::
+   .. code-block:: shell-session
 
        git push --tags
 
@@ -167,7 +164,7 @@ If you intent to release a new feature release, see the
 
 #. Checkout out the stable branch and pull your merged changes:
 
-   ::
+   .. code-block:: shell-session
 
        git checkout v1.0; git pull
 

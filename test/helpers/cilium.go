@@ -206,7 +206,7 @@ func (s *SSHMeta) WaitEndpointsReady() bool {
 	logger := s.logger.WithFields(logrus.Fields{"functionName": "WaitEndpointsReady"})
 	desiredState := string(models.EndpointStateReady)
 	body := func() bool {
-		filter := `{range [*]}{@.status.external-identifiers.container-name}{"="}{@.status.state},{@.status.identity.id}{"\n"}{end}`
+		filter := `{range [*]}{@.id}{"="}{@.status.state},{@.status.identity.id}{"\n"}{end}`
 		cmd := fmt.Sprintf(`cilium endpoint list -o jsonpath='%s'`, filter)
 
 		res := s.Exec(cmd)
@@ -732,7 +732,7 @@ func (s *SSHMeta) DumpCiliumCommandOutput() {
 	// No need to create file for bugtool because it creates an archive of files
 	// for us.
 	res := s.ExecWithSudo(
-		fmt.Sprintf("%s -t %s", CiliumBugtool, filepath.Join(s.basePath, testPath)),
+		fmt.Sprintf("%s -t %q", CiliumBugtool, filepath.Join(s.basePath, testPath)),
 		ExecOptions{SkipLog: true})
 	if !res.WasSuccessful() {
 		s.logger.Errorf("Error running bugtool: %s", res.CombineOutput())

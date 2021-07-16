@@ -44,6 +44,15 @@ const (
 	// RouteMarkMask is the mask required for the route mark value
 	RouteMarkMask = 0xF00
 
+	// RouteMarkToProxy is the default route mark to use to indicate
+	// datapath needs to send the packet to the proxy.
+	//
+	// Specifically, this is used in the L7 ingress policy tunneling case
+	// where after decryption, the packet is rerouted back into
+	// `cilium_host` with said mark to indicate the destination as the
+	// proxy.
+	RouteMarkToProxy = MagicMarkIsToProxy
+
 	// MarkMultinodeNodeport is used for AWS ENI to mark traffic from
 	// another node, so that it gets routed back through the relevant
 	// interface.
@@ -94,6 +103,9 @@ const (
 
 	// IPsecMarkMaskIn is the mask required for IPsec to lookup encrypt/decrypt bits
 	IPsecMarkMaskIn = 0x0F00
+
+	// IPsecFwdPriority is the priority of the fwd rules placed by IPsec
+	IPsecFwdPriority = 0x0B9F
 
 	// IPsecKeyDeleteDelay is the time to wait before removing old keys when
 	// the IPsec key is changing.

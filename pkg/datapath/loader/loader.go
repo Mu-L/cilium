@@ -20,7 +20,6 @@ import (
 	"net"
 	"os"
 	"path"
-	"reflect"
 	"sync"
 
 	"github.com/cilium/cilium/pkg/bpf"
@@ -47,6 +46,7 @@ const (
 
 	symbolFromEndpoint = "from-container"
 	symbolToEndpoint   = "to-container"
+	symbolFromNetwork  = "from-network"
 
 	symbolFromHostNetdevEp = "from-netdev"
 	symbolToHostNetdevEp   = "to-netdev"
@@ -180,7 +180,7 @@ func patchHostNetdevDatapath(ep datapath.Endpoint, objPath, dstPath, ifName stri
 	if option.Config.EnableIPv4Masquerade && option.Config.EnableBPFMasquerade && bpfMasqIPv4Addrs != nil {
 		if option.Config.EnableIPv4 {
 			ipv4 := bpfMasqIPv4Addrs[ifName]
-			opts["IPV4_MASQUERADE"] = byteorder.HostSliceToNetwork(ipv4, reflect.Uint32).(uint32)
+			opts["IPV4_MASQUERADE"] = byteorder.NetIPv4ToHost32(ipv4)
 		}
 	}
 
@@ -266,7 +266,7 @@ func (l *Loader) reloadHostDatapath(ctx context.Context, ep datapath.Endpoint, o
 
 	for i, interfaceName := range interfaceNames {
 		symbol := symbols[i]
-		if err := l.replaceDatapath(ctx, interfaceName, objPaths[i], symbol, directions[i]); err != nil {
+		if err := replaceDatapath(ctx, interfaceName, objPaths[i], symbol, directions[i], false, ""); err != nil {
 			scopedLog := ep.Logger(Subsystem).WithFields(logrus.Fields{
 				logfields.Path: objPath,
 				logfields.Veth: interfaceName,
@@ -285,10 +285,9 @@ func (l *Loader) reloadHostDatapath(ctx context.Context, ep datapath.Endpoint, o
 }
 
 func datapathHasMultipleMasterDevices() bool {
-	// In Flannel's case or when using ipvlan, HOST_DEV2 is equal to HOST_DEV1
-	// in init.sh and we have a single master device.
-	return option.Config.DatapathMode != datapathOption.DatapathModeIpvlan &&
-		!option.Config.IsFlannelMasterDeviceSet()
+	// When using ipvlan, HOST_DEV2 is equal to HOST_DEV1 in init.sh and we
+	// have a single master device.
+	return option.Config.DatapathMode != datapathOption.DatapathModeIpvlan
 }
 
 func (l *Loader) reloadDatapath(ctx context.Context, ep datapath.Endpoint, dirs *directoryInfo) error {
@@ -314,7 +313,7 @@ func (l *Loader) reloadDatapath(ctx context.Context, ep datapath.Endpoint, dirs 
 			return err
 		}
 	} else {
-		if err := l.replaceDatapath(ctx, ep.InterfaceName(), objPath, symbolFromEndpoint, dirIngress); err != nil {
+		if err := replaceDatapath(ctx, ep.InterfaceName(), objPath, symbolFromEndpoint, dirIngress, false, ""); err != nil {
 			scopedLog := ep.Logger(Subsystem).WithFields(logrus.Fields{
 				logfields.Path: objPath,
 				logfields.Veth: ep.InterfaceName(),
@@ -329,7 +328,7 @@ func (l *Loader) reloadDatapath(ctx context.Context, ep datapath.Endpoint, dirs 
 		}
 
 		if ep.RequireEgressProg() {
-			if err := l.replaceDatapath(ctx, ep.InterfaceName(), objPath, symbolToEndpoint, dirEgress); err != nil {
+			if err := replaceDatapath(ctx, ep.InterfaceName(), objPath, symbolToEndpoint, dirEgress, false, ""); err != nil {
 				scopedLog := ep.Logger(Subsystem).WithFields(logrus.Fields{
 					logfields.Path: objPath,
 					logfields.Veth: ep.InterfaceName(),
@@ -350,22 +349,34 @@ func (l *Loader) reloadDatapath(ctx context.Context, ep datapath.Endpoint, dirs 
 		}
 	}
 
-	if ip := ep.IPv4Address(); ip.IsSet() {
-		if ep.RequireEndpointRoute() {
-			upsertEndpointRoute(ep, *ip.IPNet(32))
-		} else {
-			removeEndpointRoute(ep, *ip.IPNet(32))
+	if ep.RequireEndpointRoute() {
+		scopedLog := ep.Logger(Subsystem).WithFields(logrus.Fields{
+			logfields.Veth: ep.InterfaceName(),
+		})
+		if ip := ep.IPv4Address(); ip.IsSet() {
+			if err := upsertEndpointRoute(ep, *ip.IPNet(32)); err != nil {
+				scopedLog.WithError(err).Warn("Failed to upsert route")
+			}
+		}
+		if ip := ep.IPv6Address(); ip.IsSet() {
+			if err := upsertEndpointRoute(ep, *ip.IPNet(128)); err != nil {
+				scopedLog.WithError(err).Warn("Failed to upsert route")
+			}
 		}
 	}
 
-	if ip := ep.IPv6Address(); ip.IsSet() {
-		if ep.RequireEndpointRoute() {
-			upsertEndpointRoute(ep, *ip.IPNet(128))
-		} else {
-			removeEndpointRoute(ep, *ip.IPNet(128))
+	return nil
+}
+
+func (l *Loader) replaceNetworkDatapath(ctx context.Context, interfaces []string) error {
+	if err := compileNetwork(ctx); err != nil {
+		log.WithError(err).Fatal("failed to compile encryption programs")
+	}
+	for _, iface := range option.Config.EncryptInterface {
+		if err := replaceDatapath(ctx, iface, networkObj, symbolFromNetwork, dirIngress, false, ""); err != nil {
+			log.WithField(logfields.Interface, iface).Fatal("Load encryption network failed")
 		}
 	}
-
 	return nil
 }
 

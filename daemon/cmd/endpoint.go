@@ -306,20 +306,24 @@ func (m *endpointCreationManager) DebugStatus() (output string) {
 // createEndpoint attempts to create the endpoint corresponding to the change
 // request that was specified.
 func (d *Daemon) createEndpoint(ctx context.Context, owner regeneration.Owner, epTemplate *models.EndpointChangeRequest) (*endpoint.Endpoint, int, error) {
-	if epTemplate.DatapathConfiguration == nil {
-		dpConfig := endpoint.NewDatapathConfiguration()
-		epTemplate.DatapathConfiguration = &dpConfig
-	} else {
-		if option.Config.EnableEndpointRoutes {
-			epTemplate.DatapathConfiguration.InstallEndpointRoute = true
-			epTemplate.DatapathConfiguration.RequireEgressProg = true
-			disabled := false
-			epTemplate.DatapathConfiguration.RequireRouting = &disabled
-		} else {
-			epTemplate.DatapathConfiguration.InstallEndpointRoute = false
-			epTemplate.DatapathConfiguration.RequireEgressProg = false
-			epTemplate.DatapathConfiguration.RequireRouting = nil
+	if option.Config.EnableEndpointRoutes {
+		if epTemplate.DatapathConfiguration == nil {
+			epTemplate.DatapathConfiguration = &models.EndpointDatapathConfiguration{}
 		}
+
+		// Indicate to insert a per endpoint route instead of routing
+		// via cilium_host interface
+		epTemplate.DatapathConfiguration.InstallEndpointRoute = true
+
+		// Since routing occurs via endpoint interface directly, BPF
+		// program is needed on that device at egress as BPF program on
+		// cilium_host interface is bypassed
+		epTemplate.DatapathConfiguration.RequireEgressProg = true
+
+		// Delegate routing to the Linux stack rather than tail-calling
+		// between BPF programs.
+		disabled := false
+		epTemplate.DatapathConfiguration.RequireRouting = &disabled
 	}
 
 	log.WithFields(logrus.Fields{
@@ -569,7 +573,7 @@ func NewPatchEndpointIDHandler(d *Daemon) PatchEndpointIDHandler {
 // model specifies is one to which an Endpoint can transition as part of a
 // call to PATCH on an Endpoint.
 func validPatchTransitionState(state models.EndpointState) bool {
-	switch string(state) {
+	switch endpoint.State(state) {
 	case "", endpoint.StateWaitingForIdentity, endpoint.StateReady:
 		return true
 	}

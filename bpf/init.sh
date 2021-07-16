@@ -20,26 +20,22 @@ IP4_HOST=$3
 IP6_HOST=$4
 MODE=$5
 TUNNEL_MODE=$6
-# Only set if MODE = "direct", "ipvlan", "flannel"
+# Only set if MODE = "direct", "ipvlan"
 NATIVE_DEVS=$7
 HOST_DEV1=$8
 HOST_DEV2=$9
-XDP_DEV=${10}
-XDP_MODE=${11}
-MTU=${12}
-IPSEC=${13}
-ENCRYPT_DEV=${14}
-HOSTLB=${15}
-HOSTLB_UDP=${16}
-HOSTLB_PEER=${17}
-CGROUP_ROOT=${18}
-BPFFS_ROOT=${19}
-NODE_PORT=${20}
-NODE_PORT_BIND=${21}
-MCPU=${22}
-NR_CPUS=${23}
-ENDPOINT_ROUTES=${24}
-PROXY_RULE=${25}
+MTU=${10}
+HOSTLB=${11}
+HOSTLB_UDP=${12}
+HOSTLB_PEER=${13}
+CGROUP_ROOT=${14}
+BPFFS_ROOT=${15}
+NODE_PORT=${16}
+NODE_PORT_BIND=${17}
+MCPU=${18}
+NR_CPUS=${19}
+ENDPOINT_ROUTES=${20}
+PROXY_RULE=${21}
 
 ID_HOST=1
 ID_WORLD=2
@@ -171,46 +167,39 @@ function setup_proxy_rules()
 		ip -4 rule del $from_ingress_rulespec 2> /dev/null || true
 	fi
 
-	# flannel might not have an IPv6 address
-	case "${MODE}" in
-		"flannel")
-			;;
-		*)
-			if [ "$IP6_HOST" != "<nil>" ]; then
-				if [ -n "$(ip -6 rule list)" ]; then
-					if [ -z "$(ip -6 rule list $to_proxy_rulespec)" ]; then
-						ip -6 rule add $to_proxy_rulespec
-					fi
-					if [ "$ENDPOINT_ROUTES" = "true" ]; then
-						if [ ! -z "$(ip -6 rule list $from_ingress_rulespec)" ]; then
-							ip -6 rule delete $from_ingress_rulespec
-						fi
-					else
-						if [ -z "$(ip -6 rule list $from_ingress_rulespec)" ]; then
-							ip -6 rule add $from_ingress_rulespec
-						fi
-					fi
-				fi
-
-				IP6_LLADDR=$(ip -6 addr show dev $HOST_DEV2 | grep inet6 | head -1 | awk '{print $2}' | awk -F'/' '{print $1}')
-				if [ -n "$IP6_LLADDR" ]; then
-					# Traffic to the host proxy is local
-					ip -6 route replace table $TO_PROXY_RT_TABLE local ::/0 dev lo
-					# Traffic from ingress proxy goes to Cilium address space via the cilium host device
-					if [ "$ENDPOINT_ROUTES" = "true" ]; then
-						ip -6 route delete table $PROXY_RT_TABLE ${IP6_LLADDR}/128 dev $HOST_DEV1 2>/dev/null || true
-						ip -6 route delete table $PROXY_RT_TABLE default via $IP6_LLADDR dev $HOST_DEV1 2>/dev/null || true
-					else
-						ip -6 route replace table $PROXY_RT_TABLE ${IP6_LLADDR}/128 dev $HOST_DEV1
-						ip -6 route replace table $PROXY_RT_TABLE default via $IP6_LLADDR dev $HOST_DEV1
-					fi
+	if [ "$IP6_HOST" != "<nil>" ]; then
+		if [ -n "$(ip -6 rule list)" ]; then
+			if [ -z "$(ip -6 rule list $to_proxy_rulespec)" ]; then
+				ip -6 rule add $to_proxy_rulespec
+			fi
+			if [ "$ENDPOINT_ROUTES" = "true" ]; then
+				if [ ! -z "$(ip -6 rule list $from_ingress_rulespec)" ]; then
+					ip -6 rule delete $from_ingress_rulespec
 				fi
 			else
-				ip -6 rule del $to_proxy_rulespec 2> /dev/null || true
-				ip -6 rule del $from_ingress_rulespec 2> /dev/null || true
+				if [ -z "$(ip -6 rule list $from_ingress_rulespec)" ]; then
+					ip -6 rule add $from_ingress_rulespec
+				fi
 			fi
-			;;
-	esac
+		fi
+
+		IP6_LLADDR=$(ip -6 addr show dev $HOST_DEV2 | grep inet6 | head -1 | awk '{print $2}' | awk -F'/' '{print $1}')
+		if [ -n "$IP6_LLADDR" ]; then
+			# Traffic to the host proxy is local
+			ip -6 route replace table $TO_PROXY_RT_TABLE local ::/0 dev lo
+			# Traffic from ingress proxy goes to Cilium address space via the cilium host device
+			if [ "$ENDPOINT_ROUTES" = "true" ]; then
+				ip -6 route delete table $PROXY_RT_TABLE ${IP6_LLADDR}/128 dev $HOST_DEV1 2>/dev/null || true
+				ip -6 route delete table $PROXY_RT_TABLE default via $IP6_LLADDR dev $HOST_DEV1 2>/dev/null || true
+			else
+				ip -6 route replace table $PROXY_RT_TABLE ${IP6_LLADDR}/128 dev $HOST_DEV1
+				ip -6 route replace table $PROXY_RT_TABLE default via $IP6_LLADDR dev $HOST_DEV1
+			fi
+		fi
+	else
+		ip -6 rule del $to_proxy_rulespec 2> /dev/null || true
+		ip -6 rule del $from_ingress_rulespec 2> /dev/null || true
+	fi
 }
 
 function mac2array()
@@ -244,38 +233,6 @@ function bpf_compile()
 	      $EXTRA_OPTS					\
 	      -c $LIB/$IN -o - |				\
 	llc -march=bpf -mcpu=$MCPU -mattr=dwarfris -filetype=$TYPE -o $OUT
-}
-
-function xdp_unload()
-{
-	DEV=$1
-	MODE=$2
-
-	ip link set dev $DEV $MODE off 2> /dev/null || true
-}
-
-function xdp_load()
-{
-	DEV=$1
-	MODE=$2
-	OPTS=$3
-	IN=$4
-	OUT=$5
-	SEC=$6
-	CIDR_MAP=$7
-
-	NODE_MAC=$(ip link show $DEV | grep ether | awk '{print $2}')
-	NODE_MAC="{.addr=$(mac2array $NODE_MAC)}"
-
-	bpf_compile $IN $OUT obj "$OPTS -DNODE_MAC=${NODE_MAC}"
-	rm -f "$CILIUM_BPF_MNT/xdp/globals/$CIDR_MAP" 2> /dev/null || true
-	cilium-map-migrate -s $OUT
-	set +e
-	ip -force link set dev $DEV $MODE obj $OUT sec $SEC
-	RETCODE=$?
-	set -e
-	cilium-map-migrate -e $OUT -r $RETCODE
-	return $RETCODE
 }
 
 function bpf_unload()
@@ -398,21 +355,14 @@ case "${MODE}" in
 		echo "#define EPHEMERAL_MIN $CILIUM_EPHEMERAL_MIN" >> $RUNDIR/globals/node_config.h
 esac
 
-# Address management
-case "${MODE}" in
-	"flannel")
-		;;
-	*)
-		# If the host does not have an IPv6 address assigned, assign our generated host
-		# IP to make the host accessible to endpoints
-		if [ "$IP6_HOST" != "<nil>" ]; then
-			[ -n "$(ip -6 addr show to $IP6_HOST dev $HOST_DEV1)" ] || ip -6 addr add $IP6_HOST dev $HOST_DEV1
-		fi
-		if [ "$IP4_HOST" != "<nil>" ]; then
-			[ -n "$(ip -4 addr show to $IP4_HOST dev $HOST_DEV1)" ] || ip -4 addr add $IP4_HOST dev $HOST_DEV1 scope link
-		fi
-        ;;
-esac
+	# If the host does not have an IPv6 address assigned, assign our generated host
+	# IP to make the host accessible to endpoints
+	if [ "$IP6_HOST" != "<nil>" ]; then
+		[ -n "$(ip -6 addr show to $IP6_HOST dev $HOST_DEV1)" ] || ip -6 addr add $IP6_HOST dev $HOST_DEV1
+	fi
+	if [ "$IP4_HOST" != "<nil>" ]; then
+		[ -n "$(ip -4 addr show to $IP4_HOST dev $HOST_DEV1)" ] || ip -4 addr add $IP4_HOST dev $HOST_DEV1 scope link
+	fi
 
 if [ "$PROXY_RULE" = "true" ]; then
 # Decrease priority of the rule to identify local addresses
@@ -469,6 +419,11 @@ else
 	ip link del cilium_ipip4 2> /dev/null || true
 	ip link del cilium_ipip6 2> /dev/null || true
 	ip link del cilium_sit   2> /dev/null || true
+fi
+
+if [ "$MODE" = "tunnel" ]; then
+	sed -i '/^#.*TUNNEL_MODE.*$/d' $RUNDIR/globals/node_config.h
+	echo "#define TUNNEL_MODE 1" >> $RUNDIR/globals/node_config.h
 fi
 
 if [ "${TUNNEL_MODE}" != "<nil>" ]; then
@@ -608,43 +563,8 @@ else
 	bpf_clear_cgroups $CGROUP_ROOT getpeername6
 fi
 
-if [ "$IPSEC" == "true" ]; then
-	if [ "$ENCRYPT_DEV" != "<nil>" ]; then
-		CALLS_MAP="cilium_calls_netdev_ns_${ID_HOST}"
-		bpf_load $ENCRYPT_DEV "" "ingress" bpf_network.c bpf_network.o from-network $CALLS_MAP
-	fi
-fi
 if [ "$HOST_DEV1" != "$HOST_DEV2" ]; then
 	bpf_unload $HOST_DEV2 "egress"
-fi
-
-# Remove bpf_xdp.o from previously used devices
-for iface in $(ip -o -a l | grep prog/xdp | awk '{print $2}' | cut -d: -f1 | cut -d@ -f1 | grep -v cilium); do
-	[ "$iface" == "$XDP_DEV" ] && continue
-	for mode in xdpdrv xdpgeneric; do
-		xdp_unload "$iface" "$mode"
-	done
-done
-
-if [ "$XDP_DEV" != "<nil>" ]; then
-	if ip -one link show dev $XDP_DEV | grep -v -q $XDP_MODE; then
-		for mode in xdpdrv xdpgeneric; do
-			xdp_unload "$XDP_DEV" "$mode"
-		done
-	fi
-	CIDR_MAP="cilium_cidr_v*"
-	COPTS="-DSECLABEL=${ID_WORLD} -DCALLS_MAP=cilium_calls_xdp"
-	if [ "$NODE_PORT" = "true" ]; then
-		COPTS="${COPTS} -DDISABLE_LOOPBACK_LB"
-	fi
-	if [ "$NODE_PORT" = "true" ]; then
-		THIS_MTU=$(cat /sys/class/net/${XDP_DEV}/mtu)
-		echo "#define THIS_MTU $THIS_MTU" >> $RUNDIR/globals/node_config.h
-
-		NATIVE_DEV_IDX=$(cat /sys/class/net/${XDP_DEV}/ifindex)
-		COPTS="${COPTS} -DNATIVE_DEV_IFINDEX=${NATIVE_DEV_IDX}"
-	fi
-	xdp_load $XDP_DEV $XDP_MODE "$COPTS" bpf_xdp.c bpf_xdp.o from-netdev $CIDR_MAP
 fi
 
 # Compile dummy BPF file containing all shared struct definitions used by

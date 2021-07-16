@@ -88,6 +88,9 @@ pipeline {
                     }
                     if (env.run_with_race_detection?.trim()) {
                         env.DOCKER_TAG = env.DOCKER_TAG + "-race"
+                        env.RACE = 1
+                        env.LOCKDEBUG = 1
+                        env.BASE_IMAGE = "quay.io/cilium/cilium-runtime:28b5a8658b596d12d80b0e7dad3efc2e77ec2d65@sha256:fbf8eee141101fade247dbe94cf84ca3bdcd92b96108996c50859ab7edd607d0"
                     }
                 }
             }
@@ -126,7 +129,7 @@ pipeline {
                         // We need to define all ${KERNEL}-dependent env vars in stage instead of top environment block
                         // because jenkins doesn't initialize these values sequentially within one block
 
-                        // We set KUBEPROXY="0" if we are running net-next or 4.19; otherwise, KUBEPROXY=""
+                        // We set KUBEPROXY="0" if we are running net-next; otherwise, KUBEPROXY=""
                         // If we are running in net-next, we need to set NETNEXT=1, K8S_NODES=3, and NO_CILIUM_ON_NODE="k8s3";
                         // otherwise we set NETNEXT=0, K8S_NODES=2, and NO_CILIUM_ON_NODE="".
                         NETNEXT="""${sh(
@@ -143,7 +146,7 @@ pipeline {
                             )}"""
                         KUBEPROXY="""${sh(
                             returnStdout: true,
-                            script: 'if [ "${KERNEL}" = "net-next" ] || [ "${KERNEL}" = "419" ]; then echo -n "0"; else echo -n ""; fi'
+                            script: 'if [ "${KERNEL}" = "net-next" ]; then echo -n "0"; else echo -n ""; fi'
                             )}"""
                     }
                     steps {
@@ -173,7 +176,7 @@ pipeline {
                         retry(25) {
                             sleep(time: 60)
                             sh 'curl --silent -f -lSL "https://quay.io/api/v1/repository/cilium/cilium-ci/tag/${DOCKER_TAG}/images"'
-                            sh 'curl --silent -f -lSL "https://quay.io/api/v1/repository/cilium/operator-ci/tag/${DOCKER_TAG}/images"'
+                            sh 'curl --silent -f -lSL "https://quay.io/api/v1/repository/cilium/operator-generic-ci/tag/${DOCKER_TAG}/images"'
                             sh 'curl --silent -f -lSL "https://quay.io/api/v1/repository/cilium/hubble-relay-ci/tag/${DOCKER_TAG}/images"'
                         }
                     }
@@ -202,7 +205,7 @@ pipeline {
                 // We need to define all ${KERNEL}-dependent env vars in stage instead of top environment block
                 // because jenkins doesn't initialize these values sequentially within one block
 
-                // We set KUBEPROXY="0" if we are running net-next or 4.19; otherwise, KUBEPROXY=""
+                // We set KUBEPROXY="0" if we are running net-next; otherwise, KUBEPROXY=""
                 // If we are running in net-next, we need to set NETNEXT=1, K8S_NODES=3, and NO_CILIUM_ON_NODE="k8s3";
                 // otherwise we set NETNEXT=0, K8S_NODES=2, and NO_CILIUM_ON_NODE="".
                 NETNEXT="""${sh(
@@ -219,7 +222,7 @@ pipeline {
                     )}"""
                 KUBEPROXY="""${sh(
                     returnStdout: true,
-                    script: 'if [ "${KERNEL}" = "net-next" ] || [ "${KERNEL}" = "419" ]; then echo -n "0"; else echo -n ""; fi'
+                    script: 'if [ "${KERNEL}" = "net-next" ]; then echo -n "0"; else echo -n ""; fi'
                     )}"""
                 CILIUM_IMAGE = "quay.io/cilium/cilium-ci"
                 CILIUM_TAG = "${DOCKER_TAG}"

@@ -55,7 +55,7 @@ context of that pod:
 
 .. code-block:: shell-session
 
-   $ kubectl -n kube-system exec -ti cilium-2hq5z -- cilium status
+   $ kubectl -n kube-system exec cilium-2hq5z -- cilium status
    KVStore:                Ok   etcd: 1/1 connected: http://demo-etcd-lab--a.etcd.tgraf.test1.lab.corp.isovalent.link:2379 - 3.2.5 (Leader)
    ContainerRuntime:       Ok   docker daemon: OK
    Kubernetes:             Ok   OK
@@ -71,9 +71,9 @@ Alternatively, the ``k8s-cilium-exec.sh`` script can be used to run ``cilium
 status`` on all nodes. This will provide detailed status and health information
 of all nodes in the cluster:
 
-.. code:: bash
+.. code-block:: shell-session
 
-   curl -sLO releases.cilium.io/v1.1.0/tools/k8s-cilium-exec.sh
+   curl -sLO https://raw.githubusercontent.com/cilium/cilium/master/contrib/k8s/k8s-cilium-exec.sh
    chmod +x ./k8s-cilium-exec.sh
 
 ... and run ``cilium status`` on all nodes:
@@ -105,7 +105,7 @@ Logs
 To retrieve log files of a cilium pod, run (replace ``cilium-1234`` with a pod
 name returned by ``kubectl -n kube-system get pods -l k8s-app=cilium``)
 
-.. code:: bash
+.. code-block:: shell-session
 
    kubectl -n kube-system logs --timestamps cilium-1234
 
@@ -113,7 +113,7 @@ If the cilium pod was already restarted due to the liveness problem after
 encountering an issue, it can be useful to retrieve the logs of the pod before
 the last restart:
 
-.. code:: bash
+.. code-block:: shell-session
 
    kubectl -n kube-system logs --timestamps -p cilium-1234
 
@@ -148,6 +148,38 @@ Observing Flows with Hubble
 Hubble is a built-in observability tool which allows you to inspect recent flow
 events on all endpoints managed by Cilium.
 
+Ensure Hubble is running correctly
+----------------------------------
+
+To ensure the Hubble client can connect to the Hubble server running inside
+Cilium, you may use the ``hubble status`` command from within a Cilium pod:
+
+.. code-block:: shell-session
+
+   $ hubble status
+   Healthcheck (via unix:///var/run/cilium/hubble.sock): Ok
+   Current/Max Flows: 4095/4095 (100.00%)
+   Flows/s: 164.21
+
+``cilium-agent`` must be running with the ``--enable-hubble`` option (default) in order
+for the Hubble server to be enabled. When deploying Cilium with Helm, make sure
+to set the ``hubble.enabled=true`` value.
+
+To check if Hubble is enabled in your deployment, you may look for the
+following output in ``cilium status``:
+
+.. code-block:: shell-session
+
+   $ cilium status
+   ...
+   Hubble:   Ok   Current/Max Flows: 4095/4095 (100.00%), Flows/s: 164.21   Metrics: Disabled
+   ...
+
+.. note::
+   Pods need to be managed by Cilium in order to be observable by Hubble.
+   See how to :ref:`ensure a pod is managed by Cilium<ensure_managed_pod>`
+   for more details.
+
 Observing flows of a specific pod
 ---------------------------------
 
@@ -161,19 +193,18 @@ in the last three minutes:
 .. code-block:: shell-session
 
    $ kubectl exec -n kube-system cilium-77lk6 -- hubble observe --since 3m --pod default/tiefighter
-   Jun  2 11:14:46.041   default/tiefighter:38314                  kube-system/coredns-66bff467f8-ktk8c:53   to-endpoint   FORWARDED   UDP
-   Jun  2 11:14:46.041   kube-system/coredns-66bff467f8-ktk8c:53   default/tiefighter:38314                  to-endpoint   FORWARDED   UDP
-   Jun  2 11:14:46.041   default/tiefighter:38314                  kube-system/coredns-66bff467f8-ktk8c:53   to-endpoint   FORWARDED   UDP
-   Jun  2 11:14:46.042   kube-system/coredns-66bff467f8-ktk8c:53   default/tiefighter:38314                  to-endpoint   FORWARDED   UDP
-   Jun  2 11:14:46.042   default/tiefighter:57746                  default/deathstar-5b7489bc84-9bftc:80     L3-L4         FORWARDED   TCP Flags: SYN
-   Jun  2 11:14:46.042   default/tiefighter:57746                  default/deathstar-5b7489bc84-9bftc:80     to-endpoint   FORWARDED   TCP Flags: SYN
-   Jun  2 11:14:46.042   default/deathstar-5b7489bc84-9bftc:80     default/tiefighter:57746                  to-endpoint   FORWARDED   TCP Flags: SYN, ACK
-   Jun  2 11:14:46.042   default/tiefighter:57746                  default/deathstar-5b7489bc84-9bftc:80     to-endpoint   FORWARDED   TCP Flags: ACK
-   Jun  2 11:14:46.043   default/tiefighter:57746                  default/deathstar-5b7489bc84-9bftc:80     to-endpoint   FORWARDED   TCP Flags: ACK, PSH
-   Jun  2 11:14:46.043   default/deathstar-5b7489bc84-9bftc:80     default/tiefighter:57746                  to-endpoint   FORWARDED   TCP Flags: ACK, PSH
-   Jun  2 11:14:46.043   default/tiefighter:57746                  default/deathstar-5b7489bc84-9bftc:80     to-endpoint   FORWARDED   TCP Flags: ACK, FIN
-   Jun  2 11:14:46.048   default/deathstar-5b7489bc84-9bftc:80     default/tiefighter:57746                  to-endpoint   FORWARDED   TCP Flags: ACK, FIN
-   Jun  2 11:14:46.048   default/tiefighter:57746                  default/deathstar-5b7489bc84-9bftc:80     to-endpoint   FORWARDED   TCP Flags: ACK
+   May  4 12:47:08.811: default/tiefighter:53875 -> kube-system/coredns-74ff55c5b-66f4n:53 to-endpoint FORWARDED (UDP)
+   May  4 12:47:08.811: default/tiefighter:53875 -> kube-system/coredns-74ff55c5b-66f4n:53 to-endpoint FORWARDED (UDP)
+   May  4 12:47:08.811: default/tiefighter:53875 <- kube-system/coredns-74ff55c5b-66f4n:53 to-endpoint FORWARDED (UDP)
+   May  4 12:47:08.811: default/tiefighter:53875 <- kube-system/coredns-74ff55c5b-66f4n:53 to-endpoint FORWARDED (UDP)
+   May  4 12:47:08.811: default/tiefighter:50214 <> default/deathstar-c74d84667-cx5kp:80 to-overlay FORWARDED (TCP Flags: SYN)
+   May  4 12:47:08.812: default/tiefighter:50214 <- default/deathstar-c74d84667-cx5kp:80 to-endpoint FORWARDED (TCP Flags: SYN, ACK)
+   May  4 12:47:08.812: default/tiefighter:50214 <> default/deathstar-c74d84667-cx5kp:80 to-overlay FORWARDED (TCP Flags: ACK)
+   May  4 12:47:08.812: default/tiefighter:50214 <> default/deathstar-c74d84667-cx5kp:80 to-overlay FORWARDED (TCP Flags: ACK, PSH)
+   May  4 12:47:08.812: default/tiefighter:50214 <- default/deathstar-c74d84667-cx5kp:80 to-endpoint FORWARDED (TCP Flags: ACK, PSH)
+   May  4 12:47:08.812: default/tiefighter:50214 <> default/deathstar-c74d84667-cx5kp:80 to-overlay FORWARDED (TCP Flags: ACK, FIN)
+   May  4 12:47:08.812: default/tiefighter:50214 <- default/deathstar-c74d84667-cx5kp:80 to-endpoint FORWARDED (TCP Flags: ACK, FIN)
+   May  4 12:47:08.812: default/tiefighter:50214 <> default/deathstar-c74d84667-cx5kp:80 to-overlay FORWARDED (TCP Flags: ACK)
 
 You may also use ``-o json`` to obtain more detailed information about each
 flow event.
@@ -214,88 +245,45 @@ more details about how to troubleshoot policy related drops.
    simultaneously without having to first manually target a specific node.  See
    `Observing flows with Hubble Relay`_ for more information.
 
-Ensure Hubble is running correctly
-----------------------------------
-
-To ensure the Hubble client can connect to the Hubble server running inside
-Cilium, you may use the ``hubble status`` command:
-
-.. code-block:: shell-session
-
-   $ hubble status
-   Healthcheck (via unix:///var/run/cilium/hubble.sock): Ok
-   Max Flows: 4096
-   Current Flows: 2542 (62.06%)
-
-``cilium-agent`` must be running with the ``--enable-hubble`` option (default) in order
-for the Hubble server to be enabled. When deploying Cilium with Helm, make sure
-to set the ``hubble.enabled=true`` value.
-
-To check if Hubble is enabled in your deployment, you may look for the
-following output in ``cilium status``:
-
-.. code-block:: shell-session
-
-   $ cilium status
-   ...
-   Hubble:   Ok   Current/Max Flows: 2542/4096 (62.06%), Flows/s: 164.21   Metrics: Disabled
-   ...
-
-.. note::
-   Pods need to be managed by Cilium in order to be observable by Hubble.
-   See how to :ref:`ensure a pod is managed by Cilium<ensure_managed_pod>`
-   for more details.
-
 Observing flows with Hubble Relay
 =================================
 
 Hubble Relay is a service which allows to query multiple Hubble instances
-simultaneously and aggregate the results. The Hubble service needs to be exposed
-on TCP port ``4244`` to allow Hubble Relay to connect to individual instances.
-This can be done via Helm values or option ``--hubble-listen-address :4244`` on
-cilium-agent.
+simultaneously and aggregate the results. See :ref:`hubble_setup` to enable
+Hubble Relay if it is not yet enabled and install the Hubble CLI on your local
+machine.
 
-Hubble Relay can be deployed using Helm by setting
-``hubble.relay.enabled=true``. This will deploy Hubble Relay with one
-replica by default. Once the Hubble Relay pod is running, you may access the
-service by port-forwarding it:
+You may access the Hubble Relay service by port-forwarding it locally:
 
-.. code:: bash
+.. code-block:: shell-session
 
    kubectl -n kube-system port-forward service/hubble-relay --address 0.0.0.0 --address :: 4245:80
 
 This will forward the Hubble Relay service port (``80``) to your local machine
-on port ``4245`` on all of it's IP addresses. The next step consists of
-downloading the latest binary release of Hubble CLI from the
-`GitHub release page <https://github.com/cilium/hubble/releases>`_. Make sure to
-download the tarball for your platform, verify the checksum and extract the
-``hubble`` binary from the tarball. Optionally, add the binary to your
-``$PATH`` if using Linux or MacOS or your ``%PATH%`` if using Windows.
+on port ``4245`` on all of it's IP addresses.
 
-You can verify that Hubble Relay can be reached by running the following
-command:
-
-.. code:: bash
-
-   hubble status --server localhost:4245
-
-This command should return an output similar to the following:
+You can verify that Hubble Relay can be reached by using the Hubble CLI and
+running the following command from your local machine:
 
 .. code-block:: shell-session
 
+   hubble status
+
+This command should return an output similar to the following:
+
+::
+
    Healthcheck (via localhost:4245): Ok
-   Max Flows: 16384
-   Current Flows: 16384 (100.00%)
+   Current/Max Flows: 16380/16380 (100.00%)
+   Flows/s: 46.19
+   Connected Nodes: 4/4
 
-For convenience, you may set and export the ``HUBBLE_SERVER`` environment
-variable:
+You may see details about nodes that Hubble Relay is connected to by running
+the following command:
 
-.. code:: bash
+.. code-block:: shell-session
 
-   export HUBBLE_SERVER=localhost:4245
-
-This will allow you to use ``hubble status`` and ``hubble observe`` commands
-without having to specify the server address via the ``--server`` flag.
+   hubble list nodes
 
 As Hubble Relay shares the same API as individual Hubble instances, you may
 follow the `Observing flows with Hubble`_ section keeping in mind that
@@ -321,7 +309,7 @@ and various network policy combinations.
 To run the connectivity tests create an isolated test namespace called
 ``cilium-test`` to deploy the tests with.
 
-.. code:: bash
+.. parsed-literal::
 
    kubectl create ns cilium-test
    kubectl apply --namespace=cilium-test -f \ |SCM_WEB|\/examples/kubernetes/connectivity-check/connectivity-check.yaml
@@ -485,7 +473,9 @@ Cilium:
 
 .. code-block:: shell-session
 
-   $ ./contrib/k8s/k8s-unmanaged.sh
+   $ curl -sLO https://raw.githubusercontent.com/cilium/cilium/master/contrib/k8s/k8s-unmanaged.sh
+   $ chmod +x k8s-unmanaged.sh
+   $ ./k8s-unmanaged.sh
    kube-system/cilium-hqpk7
    kube-system/kube-addon-manager-minikube
    kube-system/kube-dns-54cccfbdf8-zmv2c
@@ -509,14 +499,14 @@ Start by finding the endpoint you are debugging from the following list. There
 are several cross references for you to use in this list, including the IP
 address and pod labels:
 
-.. code:: bash
+.. code-block:: shell-session
 
     kubectl -n kube-system exec -ti cilium-q8wvt -- cilium endpoint list
 
 When you find the correct endpoint, the first column of every row is the
 endpoint ID. Use that to dump the full endpoint information:
 
-.. code:: bash
+.. code-block:: shell-session
 
     kubectl -n kube-system exec -ti cilium-q8wvt -- cilium endpoint get 59084
 
@@ -594,9 +584,7 @@ Understanding etcd status
 -------------------------
 
 The etcd status is reported when running ``cilium status``. The following line
-represents the status of etcd:
-
-.. code:: bash
+represents the status of etcd::
 
    KVStore:  Ok  etcd: 1/1 connected, lease-ID=29c6732d5d580cb5, lock lease-ID=29c6732d5d580cb7, has-quorum=true: https://192.168.33.11:2379 - 3.4.9 (Leader)
 
@@ -654,15 +642,11 @@ cluster size. The larger the cluster, the longer the `interval
    more consecutive failures.
 
 Example of a status with a quorum failure which has not yet reached the
-threshold:
-
-.. code:: bash
+threshold::
 
     KVStore: Ok   etcd: 1/1 connected, lease-ID=29c6732d5d580cb5, lock lease-ID=29c6732d5d580cb7, has-quorum=2m2.778966915s since last heartbeat update has been received, consecutive-errors=1: https://192.168.33.11:2379 - 3.4.9 (Leader)
 
-Example of a status with the number of quorum failures exceeding the threshold:
-
-.. code:: bash
+Example of a status with the number of quorum failures exceeding the threshold::
 
     KVStore: Failure   Err: quorum check failed 8 times in a row: 4m28.446600949s since last heartbeat update has been received
 
@@ -675,7 +659,7 @@ Cluster Mesh Troubleshooting
 Install the Cilium CLI
 ----------------------
 
-.. include:: ../gettingstarted/install-cli.rst
+.. include:: ../gettingstarted/cli-download.rst
 
 Generic
 -------
@@ -698,9 +682,7 @@ Manual Verification of Setup
 ----------------------------
 
  #. Validate that the ClusterMesh subsystem is initialized by looking for a
-    ``cilium-agent`` log message like this:
-
-    .. code-block:: shell-session
+    ``cilium-agent`` log message like this::
 
        level=info msg="Initializing ClusterMesh routing" path=/var/lib/cilium/clustermesh/ subsys=daemon
 
@@ -731,15 +713,11 @@ Manual Verification of Setup
 
  #. Validate that the connection to the remote cluster could be established.
     You will see a log message like this in the ``cilium-agent`` logs for each
-    remote cluster:
-
-    .. code-block:: shell-session
+    remote cluster::
 
        level=info msg="Connection to remote cluster established"
 
-    If the connection failed, you will see a warning like this:
-
-    .. code-block:: shell-session
+    If the connection failed, you will see a warning like this::
 
        level=warning msg="Unable to establish etcd connection to remote cluster"
 
@@ -852,7 +830,7 @@ State Propagation
       cluster.  It will also have a section ``externalEndpoints`` which must
       list all endpoints of remote clusters.
 
-      .. code-block:: shell-session
+      ::
 
           #### k8s-service-cache
 
@@ -933,33 +911,36 @@ Retrieve Cilium pod managing a particular pod
 
 Identifies the Cilium pod that is managing a particular pod in a namespace:
 
-.. code:: bash
+.. code-block:: shell-session
 
     k8s-get-cilium-pod.sh <pod> <namespace>
 
 **Example:**
 
-.. code:: bash
+.. code-block:: shell-session
 
-    $ curl -sLO releases.cilium.io/v1.1.0/tools/k8s-get-cilium-pod.sh
+    $ curl -sLO https://raw.githubusercontent.com/cilium/cilium/master/contrib/k8s/k8s-get-cilium-pod.sh
+    $ chmod +x k8s-get-cilium-pod.sh
     $ ./k8s-get-cilium-pod.sh luke-pod default
     cilium-zmjj9
-
+    cilium-node-init-v7r9p
+    cilium-operator-f576f7977-s5gpq
 
 Execute a command in all Kubernetes Cilium pods
 -----------------------------------------------
 
 Run a command within all Cilium pods of a cluster
 
-.. code:: bash
+.. code-block:: shell-session
 
     k8s-cilium-exec.sh <command>
 
 **Example:**
 
-.. code:: bash
+.. code-block:: shell-session
 
-    $ curl -sLO releases.cilium.io/v1.1.0/tools/k8s-cilium-exec.sh
+    $ curl -sLO https://raw.githubusercontent.com/cilium/cilium/master/contrib/k8s/k8s-cilium-exec.sh
+    $ chmod +x k8s-cilium-exec.sh
     $ ./k8s-cilium-exec.sh uptime
      10:15:16 up 6 days,  7:37,  0 users,  load average: 0.00, 0.02, 0.00
      10:15:16 up 6 days,  7:32,  0 users,  load average: 0.00, 0.03, 0.04
@@ -973,7 +954,7 @@ Lists all Kubernetes pods in the cluster for which Cilium does *not* provide
 networking. This includes pods running in host-networking mode and pods that
 were started before Cilium was deployed.
 
-.. code:: bash
+.. code-block:: shell-session
 
    k8s-unmanaged.sh
 
@@ -981,7 +962,8 @@ were started before Cilium was deployed.
 
 .. code-block:: shell-session
 
-   $ curl -sLO releases.cilium.io/v1.1.0/tools/k8s-unmanaged.sh
+   $ curl -sLO https://raw.githubusercontent.com/cilium/cilium/master/contrib/k8s/k8s-unmanaged.sh
+   $ chmod +x k8s-unmanaged.sh
    $ ./k8s-unmanaged.sh
    kube-system/cilium-hqpk7
    kube-system/kube-addon-manager-minikube
@@ -1009,7 +991,7 @@ The script has the following list of prerequisites:
 You can download the latest version of the ``cilium-sysdump`` tool using the
 following command:
 
-.. code:: bash
+.. code-block:: shell-session
 
    curl -sLO https://github.com/cilium/cilium-sysdump/releases/latest/download/cilium-sysdump.zip
    python cilium-sysdump.zip
@@ -1018,7 +1000,7 @@ You can specify from which nodes to collect the system dumps by passing
 node IP addresses via the ``--nodes`` argument and the duration of the time
 window for collecting logs via the ``--since`` argument (e.g. ``2m``, ``3h``).
 
-.. code:: bash
+.. code-block:: shell-session
 
    python cilium-sysdump.zip --nodes $NODE1_IP,$NODE2_IP2 --since $LOG_DURATION
 
@@ -1046,7 +1028,7 @@ large, consider ``--size-limit``.
 
 Use ``--help`` to see more options:
 
-.. code:: bash
+.. code-block:: shell-session
 
    python cilium-sysdump.zip --help
 
@@ -1065,7 +1047,7 @@ default, it writes to the ``tmp`` directory.
 
 Note that the command needs to be run from inside the Cilium pod/container.
 
-.. code:: bash
+.. code-block:: shell-session
 
    cilium-bugtool
 
@@ -1079,7 +1061,7 @@ bit different
 
 .. code-block:: shell-session
 
-   # First we need to get the Cilium pod
+   $ # First we need to get the Cilium pod
    $ kubectl get pods --namespace kube-system
    NAME                          READY     STATUS    RESTARTS   AGE
    cilium-kg8lv                  1/1       Running   0          13m
@@ -1087,11 +1069,11 @@ bit different
    kube-dns-6fc954457d-sf2nk     3/3       Running   0          1h
    kubernetes-dashboard-6xvc7    1/1       Running   0          1h
 
-   # Run the bugtool from this pod
+   $ # Run the bugtool from this pod
    $ kubectl -n kube-system exec cilium-kg8lv -- cilium-bugtool
    [...]
 
-   # Copy the archive from the pod
+   $ # Copy the archive from the pod
    $ kubectl cp kube-system/cilium-kg8lv:/tmp/cilium-bugtool-20180411-155146.166+0000-UTC-266836983.tar /tmp/cilium-bugtool-20180411-155146.166+0000-UTC-266836983.tar
    [...]
 
@@ -1140,7 +1122,7 @@ format is in Markdown format so this can be used when reporting a bug on the
 `issue tracker`_.  Running without arguments will print to standard output, but
 you can also redirect to a file like
 
-.. code:: bash
+.. code-block:: shell-session
 
    cilium debuginfo -f debuginfo.md
 

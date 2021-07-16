@@ -51,16 +51,11 @@ var _ = Describe("K8sCustomCalls", func() {
 		deploymentManager.SetKubectl(kubectl)
 	})
 
-	AfterEach(func() {
-		deploymentManager.DeleteAll()
-	})
-
 	AfterFailed(func() {
 		kubectl.CiliumReport("cilium status", "cilium endpoint list")
 	})
 
 	AfterAll(func() {
-		deploymentManager.DeleteCilium()
 		kubectl.CloseSSHClient()
 	})
 
@@ -110,7 +105,18 @@ var _ = Describe("K8sCustomCalls", func() {
 			pingBytes       uint   = 98 * helpers.PingCount
 		)
 
-		BeforeAll(func() {
+		AfterEach(func() {
+			_ = kubectl.Delete(yaml)
+			ExpectAllPodsTerminated(kubectl)
+		})
+
+		AfterAll(func() {
+			deploymentManager.DeleteCilium()
+			deploymentManager.DeleteAll()
+			kubectl.RedeployDNS()
+		})
+
+		installPods := func() {
 			// Initialize all paths. This cannot be done at
 			// variable declaration because kubectl is not set when
 			// the Context is initialized.
@@ -143,12 +149,7 @@ var _ = Describe("K8sCustomCalls", func() {
 			cmd = fmt.Sprintf("make -C %s V=0", "cilium")
 			res = kubectl.ExecPodCmd(helpers.DefaultNamespace, compilerPodName, cmd)
 			res.ExpectSuccess("Failed to build cilium CLI")
-		})
-
-		AfterAll(func() {
-			_ = kubectl.Delete(yaml)
-			ExpectAllPodsTerminated(kubectl)
-		})
+		}
 
 		getPodsInfo := func() {
 			By("Retrieving pods information")
@@ -318,6 +319,8 @@ var _ = Describe("K8sCustomCalls", func() {
 			ExpectWithOffset(1, err).ShouldNot(HaveOccurred(), "Cannot get cilium pod on k8s1")
 			ciliumPodK8s2, err := kubectl.GetCiliumPodOnNode(helpers.K8s2)
 			ExpectWithOffset(1, err).ShouldNot(HaveOccurred(), "Cannot get cilium pod on k8s2")
+
+			installPods()
 
 			copyAndLoadObjectFile(ciliumPodK8s2)
 			defer cleanupLoadedObjects(ciliumPodK8s2)

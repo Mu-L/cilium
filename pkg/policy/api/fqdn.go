@@ -17,20 +17,18 @@ package api
 import (
 	"fmt"
 	"regexp"
-	"strings"
 
+	"github.com/cilium/cilium/pkg/fqdn/dns"
 	"github.com/cilium/cilium/pkg/fqdn/matchpattern"
-
-	"github.com/miekg/dns"
 )
 
 var (
 	// allowedMatchNameChars tests that MatchName contains only valid DNS characters
-	allowedMatchNameChars = regexp.MustCompile("^[-a-zA-Z0-9.]+$")
+	allowedMatchNameChars = regexp.MustCompile("^[-a-zA-Z0-9_.]+$")
 
 	// allowedPatternChars tests that the MatchPattern field contains only the
 	// characters we want in our wilcard scheme.
-	allowedPatternChars = regexp.MustCompile("^[-a-zA-Z0-9.*]+$") // the * inside the [] is a literal *
+	allowedPatternChars = regexp.MustCompile("^[-a-zA-Z0-9_.*]+$") // the * inside the [] is a literal *
 
 	// FQDNMatchNameRegexString is a regex string which matches what's expected
 	// in the MatchName field in the FQDNSelector. This should be kept in-sync
@@ -101,7 +99,7 @@ func (s *FQDNSelector) sanitize() error {
 func (s *FQDNSelector) ToRegex() (*regexp.Regexp, error) {
 	var preparedMatch string
 	if s.MatchName != "" {
-		preparedMatch = strings.ToLower(dns.Fqdn(s.MatchName))
+		preparedMatch = dns.FQDN(s.MatchName)
 	} else {
 		preparedMatch = matchpattern.Sanitize(s.MatchPattern)
 	}

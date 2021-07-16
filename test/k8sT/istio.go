@@ -15,7 +15,6 @@
 package k8sTest
 
 import (
-	"context"
 	"fmt"
 	"runtime"
 	"time"
@@ -29,14 +28,16 @@ import (
 // This tests the Istio integration, following the configuration
 // instructions specified in the Istio Getting Started Guide in
 // Documentation/gettingstarted/istio.rst.
-var _ = Describe("K8sIstioTest", func() {
+// The 5.4 CI job is intended to catch BPF complexity regressions and as such
+// doesn't need to execute this test suite.
+var _ = SkipDescribeIf(helpers.RunsOn54Kernel, "K8sIstioTest", func() {
 
 	var (
 		// istioSystemNamespace is the default namespace into which Istio is
 		// installed.
 		istioSystemNamespace = "istio-system"
 
-		istioVersion = "1.8.2"
+		istioVersion = "1.9.6"
 
 		// Modifiers for pre-release testing, normally empty
 		prerelease     = "" // "-beta.1"
@@ -46,9 +47,9 @@ var _ = Describe("K8sIstioTest", func() {
 		// - remind how to test with prerelease images in future
 		// - cause CI infra to prepull these images so that they do not
 		//   need to be pulled on demand during the test
-		// " --set values.pilot.image=docker.io/cilium/istio_pilot:1.8.2" +
-		// " --set values.global.proxy.image=docker.io/cilium/istio_proxy:1.8.2" +
-		// " --set values.global.proxy_init.image=docker.io/cilium/istio_proxy:1.8.2" +
+		// " --set values.pilot.image=quay.io/cilium/istio_pilot:1.9.6" + prerelease +
+		// " --set values.global.proxy.image=quay.io/cilium/istio_proxy:1.9.6" + prerelease +
+		// " --set values.global.proxy_init.image=quay.io/cilium/istio_proxy:1.9.6" + prerelease +
 		// " --set values.global.proxy.logLevel=trace"
 		// " --set values.global.logging.level=debug"
 		// " --set values.global.mtls.auto=false"
@@ -75,8 +76,7 @@ var _ = Describe("K8sIstioTest", func() {
 		wgetCommand = fmt.Sprintf("wget --tries=2 --connect-timeout %d", helpers.CurlConnectTimeout)
 		curlCommand = fmt.Sprintf("curl --retry 2 --retry-connrefused --connect-timeout %d", helpers.CurlConnectTimeout)
 
-		kubectl      *helpers.Kubectl
-		uptimeCancel context.CancelFunc
+		kubectl *helpers.Kubectl
 
 		teardownTimeout = 10 * time.Minute
 
@@ -111,6 +111,15 @@ var _ = Describe("K8sIstioTest", func() {
 		By("Deploying Istio")
 		res = kubectl.Exec("./cilium-istioctl install -y" + istioctlParams)
 		res.ExpectSuccess("unable to deploy Istio")
+		if !res.WasSuccessful() {
+			// AfterAll() is not called if BeforeAll() fails, have to clean up here explicitly
+			By("Deleting default namespace sidecar injection label")
+			_ = kubectl.NamespaceLabel(helpers.DefaultNamespace, "istio-injection-")
+			By("Deleting the Istio resources")
+			_ = kubectl.Exec(fmt.Sprintf("./cilium-istioctl manifest generate | %s delete -f -", helpers.KubectlCmd))
+			By("Deleting the istio-system namespace")
+			_ = kubectl.NamespaceDelete(istioSystemNamespace)
+		}
 	})
 
 	AfterAll(func() {
@@ -131,15 +140,7 @@ var _ = Describe("K8sIstioTest", func() {
 		kubectl.CloseSSHClient()
 	})
 
-	JustBeforeEach(func() {
-		var err error
-		uptimeCancel, err = kubectl.BackgroundReport("uptime")
-		Expect(err).To(BeNil(), "Cannot start background report process")
-	})
-
 	JustAfterEach(func() {
-		uptimeCancel()
-
 		kubectl.ValidateNoErrorsInLogs(CurrentGinkgoTestDescription().Duration)
 	})
 

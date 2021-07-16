@@ -95,7 +95,10 @@ func (d *Daemon) TriggerPolicyUpdates(force bool, reason string) {
 // The caller is responsible for making sure the same identity is not
 // present in both 'added' and 'deleted'.
 func (d *Daemon) UpdateIdentities(added, deleted cache.IdentityCache) {
-	d.policy.GetSelectorCache().UpdateIdentities(added, deleted)
+	wg := &sync.WaitGroup{}
+	d.policy.GetSelectorCache().UpdateIdentities(added, deleted, wg)
+	// Wait for update propagation to endpoints before triggering policy updates
+	wg.Wait()
 	d.TriggerPolicyUpdates(false, "one or more identities created or deleted")
 }
 
@@ -271,7 +274,6 @@ func (d *Daemon) policyAdd(sourceRules policyAPI.Rules, opts *policy.AddOptions,
 
 	newPrefixLengths, err := d.prefixLengths.Add(prefixes)
 	if err != nil {
-		metrics.PolicyImportErrorsTotal.Inc()
 		logger.WithError(err).WithField("prefixes", prefixes).Warn(
 			"Failed to reference-count prefix lengths in CIDR policy")
 		resChan <- &PolicyAddResult{
@@ -285,7 +287,6 @@ func (d *Daemon) policyAdd(sourceRules policyAPI.Rules, opts *policy.AddOptions,
 		logger.Debug("CIDR policy has changed; recompiling base programs")
 		if err := d.Datapath().Loader().Reinitialize(d.ctx, d, d.mtuConfig.GetDeviceMTU(), d.Datapath(), d.l7Proxy); err != nil {
 			_ = d.prefixLengths.Delete(prefixes)
-			metrics.PolicyImportErrorsTotal.Inc()
 			err2 := fmt.Errorf("Unable to recompile base programs: %s", err)
 			logger.WithError(err2).WithField("prefixes", prefixes).Warn(
 				"Failed to recompile base programs due to prefix length count change")
@@ -304,7 +305,6 @@ func (d *Daemon) policyAdd(sourceRules policyAPI.Rules, opts *policy.AddOptions,
 	newlyAllocatedIdentities := make(map[string]*identity.Identity)
 	if _, err := ipcache.AllocateCIDRs(prefixes, newlyAllocatedIdentities); err != nil {
 		_ = d.prefixLengths.Delete(prefixes)
-		metrics.PolicyImportErrorsTotal.Inc()
 		logger.WithError(err).WithField("prefixes", prefixes).Warn(
 			"Failed to allocate identities for CIDRs during policy add")
 		resChan <- &PolicyAddResult{
@@ -712,17 +712,20 @@ func (h *putPolicy) Handle(params PutPolicyParams) middleware.Responder {
 
 	var rules policyAPI.Rules
 	if err := json.Unmarshal([]byte(params.Policy), &rules); err != nil {
+		metrics.PolicyImportErrorsTotal.Inc()
 		return NewPutPolicyInvalidPolicy()
 	}
 
 	for _, r := range rules {
 		if err := r.Sanitize(); err != nil {
+			metrics.PolicyImportErrorsTotal.Inc()
 			return api.Error(PutPolicyFailureCode, err)
 		}
 	}
 
 	rev, err := d.PolicyAdd(rules, &policy.AddOptions{Source: metrics.LabelEventSourceAPI})
 	if err != nil {
+		metrics.PolicyImportErrorsTotal.Inc()
 		return api.Error(PutPolicyFailureCode, err)
 	}
 

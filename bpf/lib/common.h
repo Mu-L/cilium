@@ -142,7 +142,7 @@ ____revalidate_data_pull(struct __ctx_buff *ctx, void **data_, void **data_end_,
 			 void **l3, const __u32 l3_len, const bool pull,
 			 __u8 eth_hlen)
 {
-	const __u32 tot_len = eth_hlen + l3_len;
+	const __u64 tot_len = eth_hlen + l3_len;
 	void *data_end;
 	void *data;
 
@@ -563,6 +563,14 @@ static __always_inline __u32 or_encrypt_key(__u8 key)
 #define TC_INDEX_F_SKIP_RECIRCULATION	8
 #define TC_INDEX_F_SKIP_HOST_FIREWALL	16
 
+/*
+ * For use in ctx_{load,store}_meta(), which operates on sk_buff->cb.
+ * The verifier only exposes the first 5 slots in cb[], so this enum
+ * only contains 5 entries. Aliases are added to the slots to re-use
+ * them under different names in different parts of the datapath.
+ * Take care to not clobber slots used by other functions in the same
+ * code path.
+ */
 /* ctx_{load,store}_meta() usage: */
 enum {
 	CB_SRC_LABEL,
@@ -669,7 +677,14 @@ struct ipv4_ct_tuple {
 
 struct ct_entry {
 	__u64 rx_packets;
-	__u64 rx_bytes;
+	/* Previously, the rx_bytes field was not used for entries with
+	 * the dir=CT_SERVICE (see GH#7060). Therefore, we can safely abuse
+	 * this field to save the backend_id.
+	 */
+	union {
+		__u64 rx_bytes;
+		__u64 backend_id;
+	};
 	__u64 tx_packets;
 	__u64 tx_bytes;
 	__u32 lifetime;

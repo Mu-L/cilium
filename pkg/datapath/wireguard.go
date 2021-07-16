@@ -14,13 +14,17 @@
 
 package datapath
 
-import "net"
+import (
+	"net"
+
+	"github.com/cilium/cilium/api/v1/models"
+	"github.com/cilium/cilium/pkg/mtu"
+)
 
 // WireguardAgent manages the Wireguard peers
 type WireguardAgent interface {
-	Init() error
-	UpdatePeer(nodeName, pubKeyHex string,
-		wgIPv4, nodeIPv4 net.IP, podCIDRv4 *net.IPNet,
-		wgIPv6, nodeIPv6 net.IP, podCIDRv6 *net.IPNet) error
+	Init(mtuConfig mtu.Configuration) error
+	UpdatePeer(nodeName, pubKeyHex string, nodeIPv4, nodeIPv6 net.IP) error
 	DeletePeer(nodeName string) error
+	Status(includePeers bool) (*models.WireguardStatus, error)
 }

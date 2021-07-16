@@ -405,7 +405,9 @@ func FormatStatusResponse(w io.Writer, sr *models.StatusResponse, sd StatusDetai
 			return "Disabled"
 		}
 
-		if !sr.Masquerading.EnabledProtocols.IPV4 && !sr.Masquerading.EnabledProtocols.IPV6 {
+		if sr.Masquerading.EnabledProtocols == nil {
+			status = enabled(sr.Masquerading.Enabled)
+		} else if !sr.Masquerading.EnabledProtocols.IPV4 && !sr.Masquerading.EnabledProtocols.IPV6 {
 			status = enabled(false)
 		} else {
 			if sr.Masquerading.Mode == models.MasqueradingModeBPF {
@@ -616,5 +618,23 @@ func FormatStatusResponse(w io.Writer, sr *models.StatusResponse, sd StatusDetai
 			fmt.Fprintf(tab, "  %s\t%d\n", m.Name, m.Size)
 		}
 		tab.Flush()
+	}
+
+	if sr.Encryption != nil {
+		fields := []string{sr.Encryption.Mode}
+
+		if sr.Encryption.Msg != "" {
+			fields = append(fields, sr.Encryption.Msg)
+		} else if wg := sr.Encryption.Wireguard; wg != nil {
+			ifaces := make([]string, 0, len(wg.Interfaces))
+			for _, i := range wg.Interfaces {
+				iface := fmt.Sprintf("%s (Pubkey: %s, Port: %d, Peers: %d)",
+					i.Name, i.PublicKey, i.ListenPort, i.PeerCount)
+				ifaces = append(ifaces, iface)
+			}
+			fields = append(fields, fmt.Sprintf("[%s]", strings.Join(ifaces, ", ")))
+		}
+
+		fmt.Fprintf(w, "Encryption:\t%s\n", strings.Join(fields, "\t"))
 	}
 }

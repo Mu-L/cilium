@@ -27,9 +27,9 @@ import (
 
 	"github.com/cilium/cilium/api/v1/server"
 	"github.com/cilium/cilium/api/v1/server/restapi"
-	enitypes "github.com/cilium/cilium/pkg/aws/eni/types"
+	"github.com/cilium/cilium/pkg/aws/eni"
 	"github.com/cilium/cilium/pkg/bpf"
-	"github.com/cilium/cilium/pkg/cleanup"
+	"github.com/cilium/cilium/pkg/cgroups"
 	"github.com/cilium/cilium/pkg/common"
 	"github.com/cilium/cilium/pkg/components"
 	"github.com/cilium/cilium/pkg/controller"
@@ -47,12 +47,12 @@ import (
 	"github.com/cilium/cilium/pkg/endpoint"
 	"github.com/cilium/cilium/pkg/envoy"
 	"github.com/cilium/cilium/pkg/flowdebug"
+	"github.com/cilium/cilium/pkg/hubble/exporter/exporteroption"
 	"github.com/cilium/cilium/pkg/hubble/observer/observeroption"
 	"github.com/cilium/cilium/pkg/identity"
 	ipamOption "github.com/cilium/cilium/pkg/ipam/option"
 	"github.com/cilium/cilium/pkg/ipmasq"
 	"github.com/cilium/cilium/pkg/k8s"
-	v2 "github.com/cilium/cilium/pkg/k8s/apis/cilium.io/v2"
 	"github.com/cilium/cilium/pkg/k8s/watchers"
 	"github.com/cilium/cilium/pkg/kvstore"
 	"github.com/cilium/cilium/pkg/labels"
@@ -86,7 +86,6 @@ import (
 	"github.com/spf13/viper"
 	"github.com/vishvananda/netlink"
 	"google.golang.org/grpc"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -182,7 +181,15 @@ func init() {
 		return
 	}
 
-	cobra.OnInitialize(option.InitConfig("Cilium", "ciliumd"))
+	cobra.OnInitialize(option.InitConfig(RootCmd, "Cilium", "ciliumd"))
+
+	// Reset the help function to also exit, as we block elsewhere in interrupts
+	// and would not exit when called with -h.
+	oldHelpFunc := RootCmd.HelpFunc()
+	RootCmd.SetHelpFunc(func(c *cobra.Command, a []string) {
+		oldHelpFunc(c, a)
+		os.Exit(0)
+	})
 
 	flags := RootCmd.Flags()
 
@@ -224,6 +231,9 @@ func init() {
 	flags.Bool(option.AnnotateK8sNode, defaults.AnnotateK8sNode, "Annotate Kubernetes node")
 	option.BindEnv(option.AnnotateK8sNode)
 
+	flags.Duration(option.ARPPingRefreshPeriod, 5*time.Minute, "Period for remote node ARP entry refresh (set 0 to disable)")
+	option.BindEnv(option.ARPPingRefreshPeriod)
+
 	flags.Bool(option.AutoCreateCiliumNodeResource, defaults.AutoCreateCiliumNodeResource, "Automatically create CiliumNode resource for own node on startup")
 	option.BindEnv(option.AutoCreateCiliumNodeResource)
 
@@ -236,10 +246,6 @@ func init() {
 	flags.String(option.CGroupRoot, "", "Path to Cgroup2 filesystem")
 	option.BindEnv(option.CGroupRoot)
 
-	flags.Bool(option.BPFCompileDebugName, true, "Enable debugging of the BPF compilation process. ")
-	flags.MarkDeprecated(option.BPFCompileDebugName, "This flag is no longer available and will be removed in v1.11")
-	option.BindEnv(option.BPFCompileDebugName)
-
 	flags.Bool(option.SockopsEnableName, defaults.SockopsEnable, "Enable sockops when kernel supported")
 	option.BindEnv(option.SockopsEnableName)
 
@@ -251,6 +257,10 @@ func init() {
 
 	flags.String(option.ClusterMeshConfigName, "", "Path to the ClusterMesh configuration directory")
 	option.BindEnv(option.ClusterMeshConfigName)
+
+	flags.StringSlice(option.CompilerFlags, []string{}, "Extra CFLAGS for BPF compilation")
+	flags.MarkHidden(option.CompilerFlags)
+	option.BindEnv(option.CompilerFlags)
 
 	flags.String(option.ConfigFile, "", `Configuration file (default "$HOME/ciliumd.yaml")`)
 	option.BindEnv(option.ConfigFile)
@@ -267,7 +277,7 @@ func init() {
 	flags.StringSlice(option.DebugVerbose, []string{}, "List of enabled verbose debug groups")
 	option.BindEnv(option.DebugVerbose)
 
-	flags.StringSlice(option.Devices, []string{}, "List of devices facing cluster/external network (used for BPF NodePort, BPF masquerading and host firewall)")
+	flags.StringSlice(option.Devices, []string{}, "List of devices facing cluster/external network (used for BPF NodePort, BPF masquerading and host firewall); supports '+' as wildcard in device name, e.g. 'eth+'")
 	option.BindEnv(option.Devices)
 
 	flags.String(option.DirectRoutingDevice, "", "Device name used to connect nodes in direct routing mode (required only by BPF NodePort; if empty, automatically set to a device with k8s InternalIP/ExternalIP or with a default route)")
@@ -394,14 +404,11 @@ func init() {
 	flags.Bool(option.EnableWireguard, false, "Enable wireguard")
 	option.BindEnv(option.EnableWireguard)
 
-	flags.String(option.WireguardSubnetV4, defaults.WireguardSubnetV4, "Wireguard tunnel IPv4 subnet")
-	option.BindEnv(option.WireguardSubnetV4)
-
-	flags.String(option.WireguardSubnetV6, defaults.WireguardSubnetV6, "Wireguard tunnel IPv6 subnet")
-	option.BindEnv(option.WireguardSubnetV6)
-
 	flags.Bool(option.ForceLocalPolicyEvalAtSource, defaults.ForceLocalPolicyEvalAtSource, "Force policy evaluation of all local communication at the source endpoint")
 	option.BindEnv(option.ForceLocalPolicyEvalAtSource)
+
+	flags.Bool(option.HTTPNormalizePath, true, "Use Envoy HTTP path normalization options, which currently includes RFC 3986 path normalization, Envoy merge slashes option, and unescaping and redirecting for paths that contain escaped slashes. These are necessary to keep path based access control functional, and should not interfere with normal operation. Set this to false only with caution.")
+	option.BindEnv(option.HTTPNormalizePath)
 
 	flags.String(option.HTTP403Message, "", "Message returned in proxy L7 403 body")
 	flags.MarkHidden(option.HTTP403Message)
@@ -486,12 +493,6 @@ func init() {
 	option.BindEnv(option.K8sServiceCacheSize)
 	flags.MarkHidden(option.K8sServiceCacheSize)
 
-	// Remove in 1.11
-	flags.Bool(option.K8sForceJSONPatch, false, "When set uses JSON Patch to update CNP and CEP status in kube-apiserver")
-	option.BindEnv(option.K8sForceJSONPatch)
-	flags.MarkHidden(option.K8sForceJSONPatch)
-	flags.MarkDeprecated(option.K8sForceJSONPatch, "Marked for removal in Cilium 1.11 as this functionality is enabled by default since Kubernetes >= 1.13")
-
 	flags.String(option.K8sWatcherEndpointSelector, defaults.K8sWatcherEndpointSelector, "K8s endpoint watcher will watch for these k8s endpoints")
 	option.BindEnv(option.K8sWatcherEndpointSelector)
 
@@ -521,6 +522,9 @@ func init() {
 	flags.Duration(option.K8sSyncTimeoutName, defaults.K8sSyncTimeout, "Timeout for synchronizing k8s resources before exiting")
 	flags.MarkHidden(option.K8sSyncTimeoutName)
 	option.BindEnv(option.K8sSyncTimeoutName)
+
+	flags.Duration(option.AllocatorListTimeoutName, defaults.AllocatorListTimeout, "Timeout for listing allocator state before exiting")
+	option.BindEnv(option.AllocatorListTimeoutName)
 
 	flags.String(option.LabelPrefixFile, "", "Valid label prefixes file path")
 	option.BindEnv(option.LabelPrefixFile)
@@ -581,6 +585,9 @@ func init() {
 	flags.String(option.LoadBalancerDSRDispatch, option.DSRDispatchOption, "BPF load balancing DSR dispatch method (\"opt\", \"ipip\")")
 	option.BindEnv(option.LoadBalancerDSRDispatch)
 
+	flags.String(option.LoadBalancerDSRL4Xlate, option.DSRL4XlateFrontend, "BPF load balancing DSR L4 DNAT method for IPIP (\"frontend\", \"backend\")")
+	option.BindEnv(option.LoadBalancerDSRL4Xlate)
+
 	flags.String(option.LoadBalancerRSSv4CIDR, "", "BPF load balancing RSS outer source IPv4 CIDR prefix for IPIP")
 	option.BindEnv(option.LoadBalancerRSSv4CIDR)
 
@@ -615,10 +622,16 @@ func init() {
 	flags.Bool(option.EnableIdentityMark, true, "Enable setting identity mark for local traffic")
 	option.BindEnv(option.EnableIdentityMark)
 
-	flags.Bool(option.EnableHostFirewall, false, "Enable host network policies (beta)")
+	flags.Bool(option.EnableHostFirewall, false, "Enable host network policies (beta when using kube-proxy)")
 	option.BindEnv(option.EnableHostFirewall)
 
-	flags.String(option.IPv4NativeRoutingCIDR, "", "Allows to explicitly specify the CIDR for native routing. This value corresponds to the configured cluster-cidr.")
+	flags.String(option.NativeRoutingCIDR, "",
+		fmt.Sprintf("Allows to explicitly specify the IPv4 CIDR for native routing. This value corresponds to the configured cluster-cidr. Deprecated in favor of --%s", option.IPv4NativeRoutingCIDR))
+	option.BindEnv(option.NativeRoutingCIDR)
+	flags.MarkHidden(option.NativeRoutingCIDR)
+	flags.MarkDeprecated(option.NativeRoutingCIDR, "This option will be removed in v1.12")
+
+	flags.String(option.IPv4NativeRoutingCIDR, "", "Allows to explicitly specify the IPv4 CIDR for native routing. This value corresponds to the configured cluster-cidr.")
 	option.BindEnv(option.IPv4NativeRoutingCIDR)
 
 	flags.String(option.LibDir, defaults.LibraryPath, "Directory path to store runtime build environment")
@@ -628,7 +641,8 @@ func init() {
 	option.BindEnv(option.LogDriver)
 
 	flags.Var(option.NewNamedMapOptions(option.LogOpt, &option.Config.LogOpt, nil),
-		option.LogOpt, "Log driver options for cilium")
+		option.LogOpt, `Log driver options for cilium-agent, `+
+			`configmap example for syslog driver: {"syslog.level":"info","syslog.facility":"local5","syslog.tag":"cilium-agent"}`)
 	option.BindEnv(option.LogOpt)
 
 	flags.Bool(option.LogSystemLoadConfigName, false, "Enable periodic logging of system load")
@@ -639,10 +653,6 @@ func init() {
 
 	flags.String(option.NAT46Range, defaults.DefaultNAT46Prefix, "IPv6 prefix to map IPv4 addresses to")
 	option.BindEnv(option.NAT46Range)
-
-	flags.Bool(option.Masquerade, true, "Masquerade packets from endpoints leaving the host")
-	option.BindEnv(option.Masquerade)
-	flags.MarkDeprecated(option.Masquerade, fmt.Sprintf("This option will be removed in v1.11 in favour of %s", option.EnableIPv4Masquerade))
 
 	flags.Bool(option.EnableIPv4Masquerade, true, "Masquerade IPv4 traffic from endpoints leaving the host")
 	option.BindEnv(option.EnableIPv4Masquerade)
@@ -658,7 +668,6 @@ func init() {
 
 	flags.Bool(option.EnableEgressGateway, false, "Enable egress gateway")
 	option.BindEnv(option.EnableEgressGateway)
-	flags.MarkHidden(option.EnableEgressGateway)
 
 	flags.String(option.IPMasqAgentConfigPath, "/etc/config/ip-masq-agent", "ip-masq-agent configuration file path")
 	option.BindEnv(option.IPMasqAgentConfigPath)
@@ -729,16 +738,6 @@ func init() {
 
 	flags.Bool(option.Version, false, "Print version information")
 	option.BindEnv(option.Version)
-
-	flags.String(option.FlannelMasterDevice, "",
-		"Installs a BPF program to allow for policy enforcement in the given network interface. "+
-			"Allows to run Cilium on top of other CNI plugins that provide networking, "+
-			"e.g. flannel, where for flannel, this value should be set with 'cni0'. [EXPERIMENTAL]")
-	option.BindEnv(option.FlannelMasterDevice)
-
-	flags.Bool(option.FlannelUninstallOnExit, false, fmt.Sprintf("When used along the %s "+
-		"flag, it cleans up all BPF programs installed when Cilium agent is terminated.", option.FlannelMasterDevice))
-	option.BindEnv(option.FlannelUninstallOnExit)
 
 	flags.Bool(option.PProf, false, "Enable serving the pprof debugging API")
 	option.BindEnv(option.PProf)
@@ -862,9 +861,6 @@ func init() {
 	flags.MarkHidden(option.SelectiveRegeneration)
 	option.BindEnv(option.SelectiveRegeneration)
 
-	flags.Bool(option.SkipCRDCreation, false, "Skip Kubernetes Custom Resource Definitions creations")
-	option.BindEnv(option.SkipCRDCreation)
-
 	flags.String(option.WriteCNIConfigurationWhenReady, "", fmt.Sprintf("Write the CNI configuration as specified via --%s to path when agent is ready", option.ReadCNIConfiguration))
 	option.BindEnv(option.WriteCNIConfigurationWhenReady)
 
@@ -899,10 +895,6 @@ func init() {
 	flags.StringSlice(option.HubbleTLSClientCAFiles, []string{}, "Paths to one or more public key files of client CA certificates to use for TLS with mutual authentication (mTLS). The files must contain PEM encoded data. When provided, this option effectively enables mTLS.")
 	option.BindEnv(option.HubbleTLSClientCAFiles)
 
-	flags.Int(option.HubbleFlowBufferSize, 0, "Maximum number of flows in Hubble's buffer.")
-	flags.MarkDeprecated(option.HubbleFlowBufferSize, fmt.Sprintf("Use %s instead.", option.HubbleEventBufferCapacity))
-	option.BindEnv(option.HubbleFlowBufferSize)
-
 	flags.Int(option.HubbleEventBufferCapacity, observeroption.Default.MaxFlows.AsInt(), "Capacity of Hubble events buffer. The provided value must be one less than an integer power of two and no larger than 65535 (ie: 1, 3, ..., 2047, 4095, ..., 65535)")
 	option.BindEnv(option.HubbleEventBufferCapacity)
 
@@ -914,6 +906,27 @@ func init() {
 
 	flags.StringSlice(option.HubbleMetrics, []string{}, "List of Hubble metrics to enable.")
 	option.BindEnv(option.HubbleMetrics)
+
+	flags.String(option.HubbleExportFilePath, exporteroption.Default.Path, "Filepath to write Hubble events to.")
+	option.BindEnv(option.HubbleExportFilePath)
+
+	flags.Int(option.HubbleExportFileMaxSizeMB, exporteroption.Default.MaxSizeMB, "Size in MB at which to rotate Hubble export file.")
+	option.BindEnv(option.HubbleExportFileMaxSizeMB)
+
+	flags.Int(option.HubbleExportFileMaxBackups, exporteroption.Default.MaxBackups, "Number of rotated Hubble export files to keep.")
+	option.BindEnv(option.HubbleExportFileMaxBackups)
+
+	flags.Bool(option.HubbleExportFileCompress, exporteroption.Default.Compress, "Compress rotated Hubble export files.")
+	option.BindEnv(option.HubbleExportFileCompress)
+
+	flags.Bool(option.EnableHubbleRecorderAPI, true, "Enable the Hubble recorder API")
+	option.BindEnv(option.EnableHubbleRecorderAPI)
+
+	flags.String(option.HubbleRecorderStoragePath, defaults.HubbleRecorderStoragePath, "Directory in which pcap files created via the Hubble Recorder API are stored")
+	option.BindEnv(option.HubbleRecorderStoragePath)
+
+	flags.Int(option.HubbleRecorderSinkQueueSize, defaults.HubbleRecorderSinkQueueSize, "Queue size of each Hubble recorder sink")
+	option.BindEnv(option.HubbleRecorderSinkQueueSize)
 
 	flags.StringSlice(option.DisableIptablesFeederRules, []string{}, "Chains to ignore when installing feeder rules.")
 	option.BindEnv(option.DisableIptablesFeederRules)
@@ -930,8 +943,11 @@ func init() {
 	flags.Int(option.LBMapEntriesName, lbmap.MaxEntries, "Maximum number of entries in Cilium BPF lbmap")
 	option.BindEnv(option.LBMapEntriesName)
 
-	flags.String(option.LocalRouterIP, "", "Link-local IP used for Cilium's router devices")
-	option.BindEnv(option.LocalRouterIP)
+	flags.String(option.LocalRouterIPv4, "", "Link-local IPv4 used for Cilium's router devices")
+	option.BindEnv(option.LocalRouterIPv4)
+
+	flags.String(option.LocalRouterIPv6, "", "Link-local IPv6 used for Cilium's router devices")
+	option.BindEnv(option.LocalRouterIPv6)
 
 	flags.String(option.K8sServiceProxyName, "", "Value of K8s service-proxy-name label for which Cilium handles the services (empty = all services without service.kubernetes.io/service-proxy-name label)")
 	option.BindEnv(option.K8sServiceProxyName)
@@ -943,7 +959,7 @@ func init() {
 	option.BindEnv(option.CRDWaitTimeout)
 
 	flags.Bool(option.EgressMultiHomeIPRuleCompat, false,
-		"Use a new scheme to store rules and routes under ENI and Azure IPAM modes, if false. Otherwise, it will use the old scheme.")
+		"Offset routing table IDs under ENI IPAM mode to avoid collisions with reserved table IDs. If false, the offset is performed (new scheme), otherwise, the old scheme stays in-place.")
 	option.BindEnv(option.EgressMultiHomeIPRuleCompat)
 
 	flags.Bool(option.EnableBPFBypassFIBLookup, defaults.EnableBPFBypassFIBLookup, "Enable FIB lookup bypass optimization for nodeport reverse NAT handling")
@@ -955,13 +971,16 @@ func init() {
 	flags.Bool(option.EnableCustomCallsName, false, "Enable tail call hooks for custom eBPF programs")
 	option.BindEnv(option.EnableCustomCallsName)
 
+	flags.Bool(option.BGPAnnounceLBIP, false, "Announces service IPs of type LoadBalancer via BGP")
+	option.BindEnv(option.BGPAnnounceLBIP)
+
+	flags.String(option.BGPConfigPath, "/var/lib/cilium/bgp/config.yaml", "Path to file containing the BGP configuration")
+	option.BindEnv(option.BGPConfigPath)
+
+	flags.Bool(option.ExternalClusterIPName, false, "Enable external access to ClusterIP services (default false)")
+	option.BindEnv(option.ExternalClusterIPName)
+
 	viper.BindPFlags(flags)
-
-	CustomCommandHelpFormat(RootCmd, option.HelpFlagSections)
-
-	// Reset the help function to also exit, as we block elsewhere in interrupts
-	// and would not exit when called with -h.
-	ResetHelpandExit(RootCmd)
 }
 
 // restoreExecPermissions restores file permissions to 0740 of all files inside
@@ -1006,7 +1025,9 @@ func initEnv(cmd *cobra.Command) {
 	logging.DefaultLogger.Hooks.Add(metrics.NewLoggingHook(components.CiliumAgentName))
 
 	// Logging should always be bootstrapped first. Do not add any code above this!
-	logging.SetupLogging(option.Config.LogDriver, logging.LogOptions(option.Config.LogOpt), "cilium-agent", option.Config.Debug)
+	if err := logging.SetupLogging(option.Config.LogDriver, logging.LogOptions(option.Config.LogOpt), "cilium-agent", option.Config.Debug); err != nil {
+		log.Fatal(err)
+	}
 
 	option.LogRegisteredOptions(log)
 
@@ -1095,6 +1116,12 @@ func initEnv(cmd *cobra.Command) {
 		scopedLog.WithError(err).Fatal("Could not create runtime directory")
 	}
 
+	if option.Config.RunDir != defaults.RuntimePath {
+		if err := os.MkdirAll(defaults.RuntimePath, defaults.RuntimePathRights); err != nil {
+			scopedLog.WithError(err).Fatal("Could not create default runtime directory")
+		}
+	}
+
 	option.Config.StateDir = filepath.Join(option.Config.RunDir, defaults.StateDir)
 	scopedLog = scopedLog.WithField(logfields.Path+".StateDir", option.Config.StateDir)
 	if err := os.MkdirAll(option.Config.StateDir, defaults.StateDirRights); err != nil {
@@ -1160,6 +1187,7 @@ func initEnv(cmd *cobra.Command) {
 	// useful if the daemon is being round inside a namespace and the
 	// BPF filesystem is mapped into the slave namespace.
 	bpf.CheckOrMountFS(option.Config.BPFRoot, k8s.IsEnabled())
+	cgroups.CheckOrMountCgrpFS(option.Config.CGroupRoot)
 
 	option.Config.Opts.SetBool(option.Debug, debugDatapath)
 	option.Config.Opts.SetBool(option.DebugLB, debugDatapath)
@@ -1210,16 +1238,6 @@ func initEnv(cmd *cobra.Command) {
 		if option.Config.Tunnel == "" {
 			option.Config.Tunnel = option.TunnelVXLAN
 		}
-		if option.Config.IsFlannelMasterDeviceSet() {
-			if option.Config.Tunnel != option.TunnelDisabled {
-				log.Warnf("Running Cilium in flannel mode requires tunnel mode be '%s'. Changing tunnel mode to: %s", option.TunnelDisabled, option.TunnelDisabled)
-				option.Config.Tunnel = option.TunnelDisabled
-			}
-			if option.Config.EnableIPv6 {
-				log.Warn("Running Cilium in flannel mode requires IPv6 mode be 'false'. Disabling IPv6 mode")
-				option.Config.EnableIPv6 = false
-			}
-		}
 	case datapathOption.DatapathModeIpvlan:
 		if option.Config.Tunnel != "" && option.Config.Tunnel != option.TunnelDisabled {
 			log.WithField(logfields.Tunnel, option.Config.Tunnel).
@@ -1257,6 +1275,10 @@ func initEnv(cmd *cobra.Command) {
 		option.Config.Ipvlan.OperationMode = connector.OperationModeL3
 		if option.Config.InstallIptRules {
 			option.Config.Ipvlan.OperationMode = connector.OperationModeL3S
+		} else {
+			log.WithFields(logrus.Fields{
+				logfields.URL: "https://github.com/cilium/cilium/issues/12879",
+			}).Warn("IPtables rule configuration has been disabled. This may affect policy and forwarding, see the URL for more details.")
 		}
 	case datapathOption.DatapathModeLBOnly:
 		log.Info("Running in LB-only mode")
@@ -1287,12 +1309,17 @@ func initEnv(cmd *cobra.Command) {
 		}
 	}
 
-	if option.Config.EnableIPSec && option.Config.Tunnel == option.TunnelDisabled && option.Config.EncryptInterface == "" {
+	// IPAMENI IPSec is configured from Reinitialize() to pull in devices
+	// that may be added or removed at runtime.
+	if option.Config.EnableIPSec &&
+		option.Config.Tunnel == option.TunnelDisabled &&
+		len(option.Config.EncryptInterface) == 0 &&
+		option.Config.IPAM != ipamOption.IPAMENI {
 		link, err := linuxdatapath.NodeDeviceNameWithDefaultRoute()
 		if err != nil {
 			log.WithError(err).Fatal("Ipsec default interface lookup failed, consider \"encrypt-interface\" to manually configure interface.")
 		}
-		option.Config.EncryptInterface = link
+		option.Config.EncryptInterface = append(option.Config.EncryptInterface, link)
 	}
 
 	if option.Config.Tunnel != option.TunnelDisabled && option.Config.EnableAutoDirectRouting {
@@ -1302,8 +1329,14 @@ func initEnv(cmd *cobra.Command) {
 	initClockSourceOption()
 	initSockmapOption()
 
-	if option.Config.EnableHostFirewall && option.Config.EnableIPSec {
-		log.Fatal("IPSec cannot be used with the host firewall.")
+	if option.Config.EnableHostFirewall {
+		if option.Config.EnableIPSec {
+			log.Fatal("IPSec cannot be used with the host firewall.")
+		}
+		if option.Config.EnableEndpointRoutes && !option.Config.EnableRemoteNodeIdentity {
+			log.Fatalf("The host firewall requires remote-node identities (%s) when running with %s",
+				option.EnableRemoteNodeIdentity, option.EnableEndpointRoutes)
+		}
 	}
 
 	if option.Config.EnableBandwidthManager && option.Config.EnableIPSec {
@@ -1362,22 +1395,16 @@ func initEnv(cmd *cobra.Command) {
 		}
 	}
 
-	if !probes.NewProbeManager().GetMisc().HaveLargeInsnLimit {
-		option.Config.NeedsRelaxVerifier = true
-	}
-
-	if option.Config.LocalRouterIP != "" {
-		if option.Config.IPAM != "" {
-			log.Fatalf("Cannot specify %s along with %s, leave router IP unspecified if Cilium is handling IPAM.", option.LocalRouterIP, option.IPAM)
-		}
+	if option.Config.LocalRouterIPv4 != "" || option.Config.LocalRouterIPv6 != "" {
+		// TODO(weil0ng): add a proper check for ipam in PR# 15429.
 		if option.Config.Tunnel != option.TunnelDisabled {
-			log.Fatalf("Cannot specify %s in tunnel mode.", option.LocalRouterIP)
+			log.Fatalf("Cannot specify %s or %s in tunnel mode.", option.LocalRouterIPv4, option.LocalRouterIPv6)
 		}
 		if !option.Config.EnableEndpointRoutes {
-			log.Fatalf("Cannot specify %s without %s.", option.LocalRouterIP, option.EnableEndpointRoutes)
+			log.Fatalf("Cannot specify %s or %s  without %s.", option.LocalRouterIPv4, option.LocalRouterIPv6, option.EnableEndpointRoutes)
 		}
 		if option.Config.EnableIPSec {
-			log.Fatalf("Cannot specify %s with %s.", option.LocalRouterIP, option.EnableIPSecName)
+			log.Fatalf("Cannot specify %s or %s with %s.", option.LocalRouterIPv4, option.LocalRouterIPv6, option.EnableIPSecName)
 		}
 	}
 
@@ -1406,6 +1433,25 @@ func initEnv(cmd *cobra.Command) {
 		// only be an IPv4 CIDR at the moment.
 		if !option.Config.EnableIPv4 {
 			log.Fatalf("%s requires IPv4 support.", option.InstallNoConntrackIptRules)
+		}
+	}
+
+	// This is necessary because the code inside pkg/k8s.NewService() for
+	// parsing services would not trigger unless NodePort is enabled. Without
+	// NodePort enabled, the external and LB IPs would not be parsed out.
+	if option.Config.BGPAnnounceLBIP {
+		option.Config.EnableNodePort = true
+		log.Infof("Auto-set BPF NodePort (%q) because LB IP announcements via BGP depend on it.", option.EnableNodePort)
+
+		if option.Config.K8sEnableK8sEndpointSlice {
+			option.Config.K8sEnableK8sEndpointSlice = false
+			log.WithFields(logrus.Fields{
+				logfields.URL: "https://github.com/metallb/metallb/issues/811",
+			}).Warnf(
+				"Disabling EndpointSlice support (%q) due to incompatibility with BGP mode. "+
+					"Cilium will fallback to using the original Endpoint resource.",
+				option.K8sEnableEndpointSlice,
+			)
 		}
 	}
 }
@@ -1438,6 +1484,7 @@ func (d *Daemon) initKVStore() {
 		d.k8sWatcher.WaitForCacheSync(
 			watchers.K8sAPIGroupServiceV1Core,
 			watchers.K8sAPIGroupEndpointV1Core,
+			watchers.K8sAPIGroupEndpointSliceV1Discovery,
 			watchers.K8sAPIGroupEndpointSliceV1Beta1Discovery,
 		)
 		log := log.WithField(logfields.LogSubsys, "etcd")
@@ -1459,25 +1506,10 @@ func (d *Daemon) initKVStore() {
 
 func runDaemon() {
 	datapathConfig := linuxdatapath.DatapathConfiguration{
-		HostDevice:       option.Config.HostDevice,
-		EncryptInterface: option.Config.EncryptInterface,
+		HostDevice: option.Config.HostDevice,
 	}
 
 	log.Info("Initializing daemon")
-
-	// Since flannel doesn't create the cni0 interface until the first container
-	// is initialized we need to wait until it is initialized so we can attach
-	// the BPF program to it. If Cilium is running as a Kubernetes DaemonSet,
-	// there is also a script waiting for the interface to be created.
-	if option.Config.IsFlannelMasterDeviceSet() {
-		err := waitForHostDeviceWhenReady(option.Config.FlannelMasterDevice)
-		if err != nil {
-			log.WithError(err).WithFields(logrus.Fields{
-				logfields.Interface: option.Config.FlannelMasterDevice,
-			}).Error("unable to check for host device")
-			return
-		}
-	}
 
 	option.Config.RunMonitorAgent = true
 
@@ -1491,8 +1523,6 @@ func runDaemon() {
 	var wgAgent *wireguard.Agent
 	if option.Config.EnableWireguard {
 		switch {
-		case option.Config.Tunnel != option.TunnelDisabled:
-			log.Fatalf("Wireguard (--%s) cannot be used with tunneling", option.EnableWireguard)
 		case option.Config.EnableIPSec:
 			log.Fatalf("Wireguard (--%s) cannot be used with IPSec (--%s)",
 				option.EnableWireguard, option.EnableIPSecName)
@@ -1503,8 +1533,7 @@ func runDaemon() {
 
 		var err error
 		privateKeyPath := filepath.Join(option.Config.StateDir, wireguardTypes.PrivKeyFilename)
-		wgAgent, err = wireguard.NewAgent(privateKeyPath,
-			option.Config.WireguardSubnetV4, option.Config.WireguardSubnetV6)
+		wgAgent, err = wireguard.NewAgent(privateKeyPath)
 		if err != nil {
 			log.WithError(err).Fatal("Failed to initialize wireguard")
 		}
@@ -1546,14 +1575,6 @@ func runDaemon() {
 		log.WithError(err).Fatal("postinit failed")
 	}
 
-	if option.Config.IsFlannelMasterDeviceSet() && option.Config.FlannelUninstallOnExit {
-		cleanup.DeferTerminationCleanupFunction(cleaner.cleanUPWg, cleaner.cleanUPSig, func() {
-			d.compilationMutex.Lock()
-			loader.RemoveTCFilters(option.FlannelMasterDevice, netlink.HANDLE_MIN_EGRESS)
-			d.compilationMutex.Unlock()
-		})
-	}
-
 	bootstrapStats.enableConntrack.Start()
 	log.Info("Starting connection tracking garbage collector")
 	gc.Enable(option.Config.EnableIPv4, option.Config.EnableIPv6,
@@ -1574,23 +1595,13 @@ func runDaemon() {
 		}
 	}
 
-	if !d.endpointManager.HostEndpointExists() {
+	if d.endpointManager.HostEndpointExists() {
+		d.endpointManager.InitHostEndpointLabels(d.ctx)
+	} else {
 		log.Info("Creating host endpoint")
 		if err := d.endpointManager.AddHostEndpoint(d.ctx, d, d.l7Proxy, d.identityAllocator,
 			"Create host endpoint", nodeTypes.GetName()); err != nil {
 			log.WithError(err).Fatal("Unable to create host endpoint")
-		}
-	}
-
-	if option.Config.IsFlannelMasterDeviceSet() {
-		if option.Config.EnableEndpointHealthChecking {
-			log.Warn("Running Cilium in flannel mode doesn't support endpoint connectivity health checking. Disabling endpoint connectivity health check.")
-			option.Config.EnableEndpointHealthChecking = false
-		}
-
-		err := node.SetInternalIPv4From(option.Config.FlannelMasterDevice)
-		if err != nil {
-			log.WithError(err).WithField("device", option.Config.FlannelMasterDevice).Fatal("Unable to set internal IPv4")
 		}
 	}
 
@@ -1626,7 +1637,7 @@ func runDaemon() {
 	// logic runs before any endpoint creates.
 	if option.Config.IPAM == ipamOption.IPAMENI {
 		migrated, failed := linuxrouting.NewMigrator(
-			&interfaceNumberGetter{},
+			&eni.InterfaceDB{},
 		).MigrateENIDatapath(option.Config.EgressMultiHomeIPRuleCompat)
 		switch {
 		case failed == -1:
@@ -1677,8 +1688,13 @@ func runDaemon() {
 		log.WithError(err).Warn("Failed to send agent start monitor message")
 	}
 
+	// clean up all arp PERM entries that might have previously set by
+	// a Cilium instance
+	if !d.datapath.Node().NodeNeighDiscoveryEnabled() {
+		d.datapath.Node().NodeCleanNeighbors()
+	}
 	// Start periodical arping to refresh neighbor table
-	if d.datapath.Node().NodeNeighDiscoveryEnabled() {
+	if d.datapath.Node().NodeNeighDiscoveryEnabled() && option.Config.ARPPingRefreshPeriod != 0 {
 		d.nodeDiscovery.Manager.StartNeighborRefresh(d.datapath.Node())
 	}
 
@@ -1706,13 +1722,23 @@ func runDaemon() {
 
 	if k8s.IsEnabled() {
 		bootstrapStats.k8sInit.Start()
-		k8s.Client().MarkNodeReady(nodeTypes.GetName())
+		k8s.Client().MarkNodeReady(d.k8sWatcher, nodeTypes.GetName())
 		bootstrapStats.k8sInit.End(true)
 	}
 
 	bootstrapStats.overall.End(true)
 	bootstrapStats.updateMetrics()
 	go d.launchHubble()
+
+	err = option.Config.StoreInFile(option.Config.StateDir)
+	if err != nil {
+		log.WithError(err).Error("Unable to store Cilium's configuration")
+	}
+
+	err = option.StoreViperInFile(option.Config.StateDir)
+	if err != nil {
+		log.WithError(err).Error("Unable to store Viper's configuration")
+	}
 
 	select {
 	case err := <-metricsErrs:
@@ -1799,6 +1825,17 @@ func (d *Daemon) instantiateAPI() *restapi.CiliumAPIAPI {
 	// /service/
 	restAPI.ServiceGetServiceHandler = NewGetServiceHandler(d.svc)
 
+	// /recorder/{id}/
+	restAPI.RecorderGetRecorderIDHandler = NewGetRecorderIDHandler(d.rec)
+	restAPI.RecorderDeleteRecorderIDHandler = NewDeleteRecorderIDHandler(d.rec)
+	restAPI.RecorderPutRecorderIDHandler = NewPutRecorderIDHandler(d.rec)
+
+	// /recorder/
+	restAPI.RecorderGetRecorderHandler = NewGetRecorderHandler(d.rec)
+
+	// /recorder/masks
+	restAPI.RecorderGetRecorderMasksHandler = NewGetRecorderMasksHandler(d.rec)
+
 	// /prefilter/
 	restAPI.PrefilterGetPrefilterHandler = NewGetPrefilterHandler(d)
 	restAPI.PrefilterDeletePrefilterHandler = NewDeletePrefilterHandler(d)
@@ -1874,86 +1911,4 @@ func initClockSourceOption() {
 			}
 		}
 	}
-}
-
-// GetInterfaceNumberByMAC implements the linuxrouting.interfaceDB interface.
-// It retrieves the number associated with the ENI device for the given MAC
-// address. The interface number is retrieved from the CiliumNode resource, as
-// this functionality is needed for ENI mode.
-func (in *interfaceNumberGetter) GetInterfaceNumberByMAC(mac string) (int, error) {
-	// Update the cache on the first run. After retrieving the CiliumNode
-	// resource, we use the cached result for the remainder of the migration.
-	if len(in.cache.ENIs) == 0 {
-		cn, err := in.fetchFromK8s(nodeTypes.GetName())
-		if err != nil {
-			return -1, err
-		}
-
-		in.cache = cn.Status.ENI
-	}
-
-	var (
-		eni   enitypes.ENI
-		found bool
-	)
-	for _, e := range in.cache.ENIs {
-		if e.MAC == mac {
-			eni = e
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		return -1, fmt.Errorf("could not find interface with MAC %q in CiliumNode resource", mac)
-	}
-
-	return eni.Number, nil
-}
-
-// GetInterfaceNumberByMAC retrieves the number associated with the ENI device
-// for the given MAC address. The interface number is retrieved from the
-// CiliumNode resource, as this functionality is needed for ENI mode. This
-// implements the linuxrouting.interfaceDB interface.
-func (in *interfaceNumberGetter) GetMACByInterfaceNumber(ifaceNum int) (string, error) {
-	// Update the cache on the first run. After retrieving the CiliumNode
-	// resource, we use the cached result for the remainder of the migration.
-	if len(in.cache.ENIs) == 0 {
-		cn, err := in.fetchFromK8s(nodeTypes.GetName())
-		if err != nil {
-			return "", err
-		}
-
-		in.cache = cn.Status.ENI
-	}
-
-	var (
-		eni   enitypes.ENI
-		found bool
-	)
-	for _, e := range in.cache.ENIs {
-		if e.Number == ifaceNum {
-			eni = e
-			found = true
-			break
-		}
-	}
-
-	if !found {
-		return "", fmt.Errorf("could not find interface with number %q in CiliumNode resource", ifaceNum)
-	}
-
-	return eni.MAC, nil
-}
-
-func (in *interfaceNumberGetter) fetchFromK8s(name string) (*v2.CiliumNode, error) {
-	return k8s.CiliumClient().CiliumV2().CiliumNodes().Get(
-		context.TODO(),
-		nodeTypes.GetName(),
-		v1.GetOptions{},
-	)
-}
-
-type interfaceNumberGetter struct {
-	cache enitypes.ENIStatus
 }

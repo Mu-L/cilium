@@ -31,13 +31,13 @@ For upgrades to new major releases please consult the `Cilium Upgrade Guide
 Listed below are the actively maintained release branches along with their latest
 minor release, corresponding image pull tags and their release notes:
 
-+-------------------------------------------------------+------------+--------------------------------------+---------------------------------------------------------------------------+------------------------------------------------------------------------+
-| `v1.9 <https://github.com/cilium/cilium/tree/v1.9>`__ | 2021-03-10 | ``docker.io/cilium/cilium:v1.9.5``   | `Release Notes <https://github.com/cilium/cilium/releases/tag/v1.9.5>`__  | `General Announcement <https://cilium.io/blog/2020/11/10/cilium-19>`__ |
-+-------------------------------------------------------+------------+--------------------------------------+---------------------------------------------------------------------------+------------------------------------------------------------------------+
-| `v1.8 <https://github.com/cilium/cilium/tree/v1.8>`__ | 2021-03-10 | ``docker.io/cilium/cilium:v1.8.8``   | `Release Notes <https://github.com/cilium/cilium/releases/tag/v1.8.8>`__  | `General Announcement <https://cilium.io/blog/2020/06/22/cilium-18>`__ |
-+-------------------------------------------------------+------------+--------------------------------------+---------------------------------------------------------------------------+------------------------------------------------------------------------+
-| `v1.7 <https://github.com/cilium/cilium/tree/v1.7>`__ | 2021-03-09 | ``docker.io/cilium/cilium:v1.7.15``  | `Release Notes <https://github.com/cilium/cilium/releases/tag/v1.7.15>`__ | `General Announcement <https://cilium.io/blog/2020/02/18/cilium-17>`__ |
-+-------------------------------------------------------+------------+--------------------------------------+---------------------------------------------------------------------------+------------------------------------------------------------------------+
++---------------------------------------------------------+------------+-----------------------------------+---------------------------------------------------------------------------+-------------------------------------------------------------------------+
+| `v1.10 <https://github.com/cilium/cilium/tree/v1.10>`__ | 2021-07-15 | ``quay.io/cilium/cilium:v1.10.3`` | `Release Notes <https://github.com/cilium/cilium/releases/tag/v1.10.3>`__ | `General Announcement <https://cilium.io/blog/2021/05/20/cilium-110>`__ |
++---------------------------------------------------------+------------+-----------------------------------+---------------------------------------------------------------------------+-------------------------------------------------------------------------+
+| `v1.9 <https://github.com/cilium/cilium/tree/v1.9>`__   | 2021-05-28 | ``quay.io/cilium/cilium:v1.9.8``  | `Release Notes <https://github.com/cilium/cilium/releases/tag/v1.9.8>`__  | `General Announcement <https://cilium.io/blog/2020/11/10/cilium-19>`__  |
++---------------------------------------------------------+------------+-----------------------------------+---------------------------------------------------------------------------+-------------------------------------------------------------------------+
+| `v1.8 <https://github.com/cilium/cilium/tree/v1.8>`__   | 2021-05-12 | ``quay.io/cilium/cilium:v1.8.10`` | `Release Notes <https://github.com/cilium/cilium/releases/tag/v1.8.10>`__ | `General Announcement <https://cilium.io/blog/2020/06/22/cilium-18>`__  |
++---------------------------------------------------------+------------+-----------------------------------+---------------------------------------------------------------------------+-------------------------------------------------------------------------+
 
 Functionality Overview
 ======================
@@ -253,6 +253,10 @@ Weekly Developer meeting
   Everybody is welcome.
 * Weekly, Monday, 8:00 am PT, 11:00 am ET, 5:00 pm CEST
 * `Join zoom <https://zoom.us/j/596609673>`_
+
+eBPF & Cilium Office Hours livestream
+-------------------------------------
+We host a weekly community `YouTube livestream called eCHO <https://www.youtube.com/channel/UCJFUxkVQTBJh3LD1wYBWvuQ>`_ which (very loosely!) stands for eBPF & Cilium Office Hours. Join us live, catch up with past episodes, or head over to the `eCHO repo <https://github.com/isovalent/eCHO>`_ and let us know your ideas for topics we should cover.
 
 License
 =======

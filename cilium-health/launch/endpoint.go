@@ -266,8 +266,15 @@ func LaunchAsEndpoint(baseCtx context.Context,
 		ip4Address = &net.IPNet{IP: healthIP, Mask: defaults.ContainerIPv4Mask}
 	}
 
-	dpConfig := endpoint.NewDatapathConfiguration()
-	info.DatapathConfiguration = &dpConfig
+	if option.Config.EnableEndpointRoutes {
+		disabled := false
+		dpConfig := &models.EndpointDatapathConfiguration{
+			InstallEndpointRoute: true,
+			RequireEgressProg:    true,
+			RequireRouting:       &disabled,
+		}
+		info.DatapathConfiguration = dpConfig
+	}
 
 	netNS, err := netns.ReplaceNetNSWithName(netNSName)
 	if err != nil {
@@ -338,7 +345,7 @@ func LaunchAsEndpoint(baseCtx context.Context,
 		return nil, fmt.Errorf("Error while configuring routes: %s", err)
 	}
 
-	if option.Config.IPAM == ipamOption.IPAMENI {
+	if option.Config.IPAM == ipamOption.IPAMENI || option.Config.IPAM == ipamOption.IPAMAlibabaCloud {
 		// ENI mode does not support IPv6.
 		if err := routingConfig.Configure(
 			healthIP,

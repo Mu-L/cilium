@@ -29,7 +29,7 @@ Cluster Addressing Requirements
 Install the Cilium CLI
 ======================
 
-.. include:: ../install-cli.rst
+.. include:: ../cli-download.rst
 
 Prepare the Clusters
 ####################
@@ -153,7 +153,6 @@ then this will also wait for the LoadBalancer to be assigned an IP.
       - 10.168.0.89:2379
     ✅ Service "clustermesh-apiserver" of type "LoadBalancer" found
     🔌 Cluster Connections:
-    - cilium-cli-ci-multicluster-2-168: 0/0 configured, 0/0 connected
     🔀 Global services: [ min:0 / avg:0.0 / max:0 ]
 
 
@@ -241,14 +240,14 @@ Use the following list of steps to troubleshoot issues with ClusterMesh:
  #. Validate that the ``cilium-xxx`` as well as the ``cilium-operator-xxx`` pods
     are healthy and ready. 
 
-    .. code:: bash
+    .. code-block:: shell-session
 
        cilium status --context $CLUSTER1
        cilium status --context $CLUSTER2
 
  #. Validate the Cluster Mesh is enabled correctly and operational:
 
-    .. code:: bash
+    .. code-block:: shell-session
 
        cilium clustermesh status --context $CLUSTER1
        cilium clustermesh status --context $CLUSTER2

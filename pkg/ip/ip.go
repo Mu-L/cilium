@@ -29,17 +29,19 @@ const (
 
 // CountIPsInCIDR takes a RFC4632/RFC4291-formatted IPv4/IPv6 CIDR and
 // determines how many IP addresses reside within that CIDR.
+// The first and the last (base and broadcast) IPs are excluded.
+//
 // Returns 0 if the input CIDR cannot be parsed.
 func CountIPsInCIDR(ipnet *net.IPNet) *big.Int {
 	subnet, size := ipnet.Mask.Size()
 	if subnet == size {
-		return big.NewInt(1)
+		return big.NewInt(0)
 	}
 	return big.NewInt(0).
 		Sub(
 			big.NewInt(2).Exp(big.NewInt(2),
 				big.NewInt(int64(size-subnet)), nil),
-			big.NewInt(1),
+			big.NewInt(2),
 		)
 }
 
@@ -281,6 +283,29 @@ func ipNetToRange(ipNet net.IPNet) netWithRange {
 	}
 
 	return netWithRange{First: &firstIP, Last: &lastIP, Network: &ipNet}
+}
+
+// GetIPAtIndex get the IP by index in the range of ipNet. The index is start with 0.
+func GetIPAtIndex(ipNet net.IPNet, index int64) net.IP {
+	netRange := ipNetToRange(ipNet)
+	val := big.NewInt(0)
+	var ip net.IP
+	if index >= 0 {
+		ip = *netRange.First
+	} else {
+		ip = *netRange.Last
+		index += 1
+	}
+	if ip.To4() != nil {
+		val.SetBytes(ip.To4())
+	} else {
+		val.SetBytes(ip)
+	}
+	val.Add(val, big.NewInt(index))
+	if ipNet.Contains(val.Bytes()) {
+		return val.Bytes()
+	}
+	return nil
 }
 
 func getPreviousIP(ip net.IP) net.IP {
